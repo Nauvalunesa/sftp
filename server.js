@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
@@ -9,6 +8,9 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
+
+// Import configuration
+const config = require('./config');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -34,20 +36,20 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX || 100),
+  windowMs: config.security.rateLimitWindow * 60 * 1000,
+  max: config.security.rateLimitMax,
   message: 'Too many requests from this IP'
 });
 app.use('/api/', limiter);
 
 // Session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'change-this-secret',
+  secret: config.session.secret,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    secure: config.server.nodeEnv === 'production',
+    maxAge: config.session.maxAge
   }
 }));
 
@@ -87,12 +89,12 @@ wss.on('connection', (ws, req) => {
       } else if (data.type === 'vnc') {
         if (data.action === 'connect') {
           // Create VNC proxy connection
-          const config = {
-            host: data.host || process.env.VNC_HOST || 'localhost',
-            port: data.port || process.env.VNC_PORT || 5900
+          const vncConfig = {
+            host: data.host || config.vnc.host,
+            port: data.port || config.vnc.port
           };
 
-          const connectionId = vncProxy.createProxy(ws, config);
+          const connectionId = vncProxy.createProxy(ws, vncConfig);
           console.log(`VNC proxy created: ${connectionId}`);
         } else if (data.action === 'disconnect') {
           // Connection will be closed by proxy service
@@ -145,14 +147,14 @@ app.use((req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = config.server.port;
 server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║  VPS Console Manager Server                               ║
 ║  --------------------------------------------------------  ║
 ║  Server running on: http://localhost:${PORT}              ║
-║  Environment: ${process.env.NODE_ENV || 'development'}                           ║
+║  Environment: ${config.server.nodeEnv}                    ║
 ║                                                           ║
 ║  Features:                                                ║
 ║  - noVNC Remote Desktop                                   ║

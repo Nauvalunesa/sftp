@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const sshAuthService = require('../services/ssh-auth');
 const net = require('net');
+const config = require('../config');
 
 // Apply authentication
 router.use(requireAuth);
@@ -12,9 +13,9 @@ router.get('/config', (req, res) => {
   res.json({
     success: true,
     config: {
-      host: process.env.VNC_HOST || 'localhost',
-      port: process.env.VNC_PORT || 5900,
-      hasPassword: !!process.env.VNC_PASSWORD
+      host: config.vnc.host,
+      port: config.vnc.port,
+      hasPassword: !!config.vnc.password
     }
   });
 });
@@ -22,8 +23,8 @@ router.get('/config', (req, res) => {
 // VNC connection status
 router.get('/status', async (req, res) => {
   try {
-    const host = process.env.VNC_HOST || 'localhost';
-    const port = process.env.VNC_PORT || 5900;
+    const host = config.vnc.host;
+    const port = config.vnc.port;
 
     // Try to connect to VNC server
     const socket = new net.Socket();
@@ -80,8 +81,8 @@ router.post('/ssh-auth', async (req, res) => {
     }
 
     const result = await sshAuthService.authenticate({
-      host: host || process.env.SSH_HOST || 'localhost',
-      port: port || process.env.SSH_PORT || 22,
+      host: host || config.ssh.host,
+      port: port || config.ssh.port,
       username,
       password
     });

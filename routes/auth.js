@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const config = require('../config');
 
 // In-memory user store (in production, use a database)
 const users = [
   {
     id: 1,
-    username: process.env.ADMIN_USERNAME || 'admin',
-    password: bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10),
+    username: config.admin.username,
+    password: bcrypt.hashSync(config.admin.password, 10),
     role: 'admin'
   }
 ];
