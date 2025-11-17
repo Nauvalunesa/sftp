@@ -16,6 +16,7 @@ const sftpRoutes = require('./routes/sftp');
 const vncRoutes = require('./routes/vnc');
 const systemRoutes = require('./routes/system');
 const terminalHandler = require('./services/terminal');
+const vncProxy = require('./services/vnc-proxy');
 
 const app = express();
 const server = http.createServer(app);
@@ -70,29 +71,54 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (message) => {
     try {
+      // Check if message is binary (VNC data)
+      if (message instanceof Buffer) {
+        // Forward binary data to VNC if handler exists
+        if (ws._vncMessageHandler) {
+          ws._vncMessageHandler(message);
+        }
+        return;
+      }
+
       const data = JSON.parse(message);
 
       if (data.type === 'terminal') {
         terminalHandler.handleTerminal(ws, data);
       } else if (data.type === 'vnc') {
-        // VNC proxy handling will be implemented
-        ws.send(JSON.stringify({
-          type: 'vnc',
-          status: 'connected'
-        }));
+        if (data.action === 'connect') {
+          // Create VNC proxy connection
+          const config = {
+            host: data.host || process.env.VNC_HOST || 'localhost',
+            port: data.port || process.env.VNC_PORT || 5900
+          };
+
+          const connectionId = vncProxy.createProxy(ws, config);
+          console.log(`VNC proxy created: ${connectionId}`);
+        } else if (data.action === 'disconnect') {
+          // Connection will be closed by proxy service
+          console.log('VNC disconnect requested');
+        }
       }
     } catch (error) {
       console.error('WebSocket message error:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: error.message
-      }));
+      // Only send error for non-binary messages
+      if (!(message instanceof Buffer)) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: error.message
+          }));
+        } catch (e) {
+          console.error('Error sending error message:', e);
+        }
+      }
     }
   });
 
   ws.on('close', () => {
     console.log('WebSocket connection closed');
     terminalHandler.closeTerminal(ws);
+    // VNC proxy will handle its own cleanup via ws.on('close') in proxy service
   });
 
   ws.on('error', (error) => {

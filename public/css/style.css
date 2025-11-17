@@ -557,6 +557,131 @@ body {
     opacity: 0.3;
 }
 
+.vnc-placeholder small {
+    display: block;
+    margin-top: 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+/* SSH Authentication Panel */
+.vnc-auth-panel {
+    background: var(--card-bg);
+    border-radius: 15px;
+    padding: 40px;
+    box-shadow: var(--shadow-lg);
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.auth-form-container h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    color: var(--primary-color);
+    font-size: 24px;
+}
+
+.auth-form-container p {
+    color: var(--text-secondary);
+    margin-bottom: 30px;
+}
+
+.ssh-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+}
+
+.form-row input {
+    flex: 1;
+}
+
+.ssh-auth-form input {
+    padding: 15px;
+    background: var(--darker-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.ssh-auth-form input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.auth-status {
+    min-height: 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+}
+
+.auth-status.success {
+    color: var(--success-color);
+}
+
+.auth-status.error {
+    color: var(--danger-color);
+}
+
+/* VNC Console */
+.vnc-info {
+    flex: 1;
+    text-align: center;
+}
+
+.session-info {
+    background: var(--card-bg);
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-size: 14px;
+    color: var(--success-color);
+}
+
+#vncCanvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    background: #000;
+    cursor: crosshair;
+}
+
+.vnc-stats {
+    background: var(--darker-bg);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-color);
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+#vncStatus {
+    font-weight: 600;
+}
+
+#vncStatus.connected {
+    color: var(--success-color);
+}
+
+#vncStatus.connecting {
+    color: var(--warning-color);
+}
+
+#vncStatus.disconnected {
+    color: var(--danger-color);
+}
+
 /* SFTP File Manager */
 .sftp-container {
     background: var(--card-bg);

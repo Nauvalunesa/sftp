@@ -174,26 +174,59 @@
 
             <!-- VNC Page -->
             <div id="vncPage" class="page">
-                <div class="vnc-container">
-                    <div class="vnc-header">
-                        <span><i class="fas fa-desktop"></i> Remote Desktop (noVNC)</span>
-                        <div class="vnc-controls">
-                            <button class="btn btn-sm" id="connectVNC">
-                                <i class="fas fa-plug"></i> Connect
+                <!-- SSH Authentication Panel -->
+                <div id="sshAuthPanel" class="vnc-auth-panel">
+                    <div class="auth-form-container">
+                        <h3><i class="fas fa-shield-alt"></i> SSH Authentication Required</h3>
+                        <p>Please authenticate with SSH before accessing VNC console</p>
+                        <div class="ssh-auth-form">
+                            <div class="form-row">
+                                <input type="text" id="sshHost" placeholder="SSH Host" value="localhost">
+                                <input type="number" id="sshPort" placeholder="Port" value="22">
+                            </div>
+                            <input type="text" id="sshUsername" placeholder="SSH Username" required>
+                            <input type="password" id="sshPassword" placeholder="SSH Password" required>
+                            <button class="btn btn-primary" id="sshAuthBtn">
+                                <i class="fas fa-sign-in-alt"></i> Authenticate SSH
                             </button>
-                            <button class="btn btn-sm" id="disconnectVNC">
+                            <div id="sshAuthStatus" class="auth-status"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VNC Console (hidden until SSH auth) -->
+                <div id="vncConsolePanel" class="vnc-container" style="display: none;">
+                    <div class="vnc-header">
+                        <span><i class="fas fa-desktop"></i> Remote Desktop Console (VNC)</span>
+                        <div class="vnc-info">
+                            <span id="sshSessionInfo" class="session-info"></span>
+                        </div>
+                        <div class="vnc-controls">
+                            <button class="btn btn-sm btn-success" id="connectVNC">
+                                <i class="fas fa-plug"></i> Connect VNC
+                            </button>
+                            <button class="btn btn-sm btn-warning" id="disconnectVNC" style="display: none;">
                                 <i class="fas fa-times"></i> Disconnect
                             </button>
                             <button class="btn btn-sm" id="fullscreenVNC">
                                 <i class="fas fa-expand"></i> Fullscreen
+                            </button>
+                            <button class="btn btn-sm btn-danger" id="logoutSSH">
+                                <i class="fas fa-sign-out-alt"></i> Logout SSH
                             </button>
                         </div>
                     </div>
                     <div id="vncViewer" class="vnc-viewer">
                         <div class="vnc-placeholder">
                             <i class="fas fa-desktop"></i>
-                            <p>Click "Connect" to start remote desktop session</p>
+                            <p>Click "Connect VNC" to start remote desktop session</p>
+                            <small>Keyboard and mouse input will be captured when connected</small>
                         </div>
+                        <canvas id="vncCanvas" style="display: none;"></canvas>
+                    </div>
+                    <div class="vnc-stats">
+                        <span id="vncStatus">Status: Disconnected</span>
+                        <span id="vncFPS" style="margin-left: 20px;">FPS: 0</span>
                     </div>
                 </div>
             </div>
