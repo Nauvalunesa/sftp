@@ -317,13 +317,24 @@ function navigateToPage(pageName) {
         pageTitle.textContent = titles[pageName];
     }
 
+    // Stop monitoring when switching away from monitor page
+    if (pageName !== 'monitor' && state.monitoringInterval) {
+        console.log('Stopping monitoring interval');
+        clearInterval(state.monitoringInterval);
+        state.monitoringInterval = null;
+    }
+
     // Initialize page-specific features
     if (pageName === 'monitor') {
         initMonitoring();
-    } else if (pageName === 'terminal' && !state.terminal) {
-        initTerminal();
+    } else if (pageName === 'terminal') {
+        if (!state.terminal) {
+            console.log('Initializing terminal...');
+            initTerminal();
+        }
     } else if (pageName === 'sftp') {
-        connectSFTP();
+        console.log('Loading file list...');
+        loadFileList();
     }
 }
 
@@ -344,13 +355,14 @@ function initMonitoring() {
         initializeCharts();
     }
 
-    // Start monitoring updates
+    // Start monitoring updates with 5 second interval (reduced load)
     if (state.monitoringInterval) {
         clearInterval(state.monitoringInterval);
     }
 
     fetchMonitoringData();
-    state.monitoringInterval = setInterval(fetchMonitoringData, 2000);
+    state.monitoringInterval = setInterval(fetchMonitoringData, 5000); // Changed from 2000 to 5000
+    console.log('Monitoring started with 5s interval');
 }
 
 function initializeCharts() {
@@ -679,7 +691,11 @@ function connectWebSocket() {
     state.ws = new WebSocket(wsUrl);
 
     state.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
+        // Update terminal status if terminal exists
+        if (state.terminal) {
+            updateTerminalStatus('Connected', true);
+        }
     };
 
     state.ws.onmessage = (event) => {
@@ -699,10 +715,15 @@ function connectWebSocket() {
     };
 
     state.ws.onclose = () => {
-        console.log('WebSocket closed');
+        console.log('WebSocket closed, will attempt reconnect in 3s');
+        // Update terminal status
+        if (state.terminal) {
+            updateTerminalStatus('Disconnected', false);
+        }
         // Attempt to reconnect after 3 seconds
         setTimeout(() => {
             if (state.sshAuthenticated) {
+                console.log('Reconnecting WebSocket...');
                 connectWebSocket();
             }
         }, 3000);
@@ -756,17 +777,54 @@ async function loadFileList(path = null) {
         state.currentPath = path;
     }
 
+    // Get home directory first if current path is /
+    if (!path && state.currentPath === '/') {
+        try {
+            console.log('Getting home directory...');
+            const homeResponse = await fetch('/api/sftp/home');
+            const homeData = await homeResponse.json();
+            if (homeData.success) {
+                state.currentPath = homeData.path;
+                console.log('Home directory:', state.currentPath);
+            }
+        } catch (error) {
+            console.error('Failed to get home directory:', error);
+        }
+    }
+
     try {
+        console.log('Loading file list for path:', state.currentPath);
         const response = await fetch(`/api/sftp/list?path=${encodeURIComponent(state.currentPath)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
 
         if (data.success) {
+            console.log(`Loaded ${data.files?.length || 0} files`);
+            state.currentPath = data.path || state.currentPath; // Update with actual path from server
             displayFileList(data.files);
             document.getElementById('currentPath').textContent = state.currentPath;
+        } else {
+            console.error('SFTP list failed:', data.message);
+            showError('Failed to load file list: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('File list error:', error);
+        showError('Failed to load file list: ' + error.message);
     }
+}
+
+function showError(message) {
+    // Simple error notification
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-notification';
+    errorDiv.textContent = message;
+    errorDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:#ef4444;color:white;padding:15px 20px;border-radius:8px;z-index:10000;';
+    document.body.appendChild(errorDiv);
+    setTimeout(() => errorDiv.remove(), 5000);
 }
 
 function displayFileList(files) {
