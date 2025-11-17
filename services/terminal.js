@@ -36,18 +36,20 @@ class TerminalService {
 
     const sshConnection = session.connection;
 
-    // Create SSH shell
+    // Create SSH shell with live terminal modes
     sshConnection.shell({
       term: 'xterm-256color',
       cols: 80,
       rows: 24,
       modes: {
-        // Enable CTRL+C, CTRL+D, etc.
-        ECHO: 1,
-        ISIG: 1,
-        ICANON: 1,
-        ICRNL: 1,
-        OPOST: 1
+        // TTY modes for live interactive terminal
+        ECHO: 1,      // Echo input characters
+        ICANON: 0,    // Disable canonical mode for live input
+        ISIG: 1,      // Enable signals (CTRL+C, CTRL+Z)
+        ICRNL: 1,     // Map CR to NL on input
+        ONLCR: 1,     // Map NL to CR-NL on output
+        OPOST: 1,     // Enable output processing
+        IEXTEN: 1     // Enable extended input processing
       }
     }, (err, stream) => {
       if (err) {
