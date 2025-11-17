@@ -70,8 +70,20 @@ class TerminalService {
         sessionId: sessionId
       });
 
+      // Track if we received any data
+      let receivedData = false;
+      let promptTimeout = null;
+
       // Handle output from SSH
       stream.on('data', (data) => {
+        receivedData = true;
+
+        // Clear timeout if we receive data
+        if (promptTimeout) {
+          clearTimeout(promptTimeout);
+          promptTimeout = null;
+        }
+
         try {
           if (ws.readyState === 1) { // WebSocket.OPEN
             ws.send(JSON.stringify({
@@ -89,6 +101,11 @@ class TerminalService {
       // Handle SSH stream close
       stream.on('close', () => {
         console.log(`Terminal ${terminalId} stream closed`);
+
+        if (promptTimeout) {
+          clearTimeout(promptTimeout);
+        }
+
         this.terminals.delete(terminalId);
 
         try {
@@ -112,6 +129,14 @@ class TerminalService {
         action: 'created',
         message: 'Terminal created successfully'
       }));
+
+      // Wait a bit for initial prompt, if none received send newline to trigger it
+      promptTimeout = setTimeout(() => {
+        if (!receivedData && stream.writable) {
+          console.log('No initial prompt received, sending newline to trigger prompt');
+          stream.write('\n');
+        }
+      }, 500);
     });
   }
 
