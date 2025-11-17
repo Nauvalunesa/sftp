@@ -751,22 +751,31 @@ body {
 .file-table {
     width: 100%;
     border-collapse: collapse;
+    background: var(--card-bg);
 }
 
 .file-table thead {
-    background: var(--darker-bg);
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+.file-table thead tr {
+    color: var(--text-primary);
 }
 
 .file-table th {
     padding: 15px 20px;
-    text-align: left;
+    text-align: center;
     font-weight: 600;
-    color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+}
+
+.file-table th:first-child {
+    text-align: left;
 }
 
 .file-table td {
-    padding: 15px 20px;
+    padding: 12px 20px;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -775,7 +784,16 @@ body {
 }
 
 .file-table tbody tr:hover {
-    background: rgba(102, 126, 234, 0.1);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.file-row .name-cell {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.file-row .name-cell:hover {
+    color: var(--primary-color);
 }
 
 .file-name {
@@ -788,6 +806,49 @@ body {
 
 .file-name i {
     color: var(--primary-color);
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+}
+
+.btn-action {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.btn-action:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.btn-action.btn-delete {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.btn-action.btn-delete:hover {
+    background: #ef4444;
+    color: white;
+    border-color: #ef4444;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 80px 20px;
 }
 
 .file-actions {
