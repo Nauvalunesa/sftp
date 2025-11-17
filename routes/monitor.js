@@ -1,15 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const monitorService = require('../services/monitor');
+const sshAuthService = require('../services/ssh-auth');
 
-// Middleware to check SSH authentication
+// Middleware to check SSH authentication and get SSH connection
 const requireSSHAuth = (req, res, next) => {
-  if (!req.session.sshSessionId) {
+  const sessionId = req.session.sshSessionId;
+
+  if (!sessionId) {
     return res.status(401).json({
       success: false,
       message: 'SSH authentication required'
     });
   }
+
+  const session = sshAuthService.getSession(sessionId);
+  if (!session || !session.connection) {
+    return res.status(401).json({
+      success: false,
+      message: 'SSH session expired or invalid'
+    });
+  }
+
+  // Attach SSH connection and sessionId to request
+  req.sshConnection = session.connection;
+  req.sshSessionId = sessionId;
   next();
 };
 
@@ -19,7 +34,7 @@ router.use(requireSSHAuth);
 // Get all system stats
 router.get('/stats', async (req, res) => {
   try {
-    const stats = await monitorService.getAllStats();
+    const stats = await monitorService.getAllStats(req.sshConnection, req.sshSessionId);
     res.json({
       success: true,
       data: stats
@@ -36,7 +51,7 @@ router.get('/stats', async (req, res) => {
 // Get CPU usage only
 router.get('/cpu', async (req, res) => {
   try {
-    const usage = await monitorService.getCpuUsage();
+    const usage = await monitorService.getCpuUsage(req.sshConnection);
     res.json({
       success: true,
       data: { usage }
@@ -51,9 +66,9 @@ router.get('/cpu', async (req, res) => {
 });
 
 // Get memory usage only
-router.get('/memory', (req, res) => {
+router.get('/memory', async (req, res) => {
   try {
-    const memory = monitorService.getMemoryUsage();
+    const memory = await monitorService.getMemoryUsage(req.sshConnection);
     res.json({
       success: true,
       data: memory
@@ -70,7 +85,7 @@ router.get('/memory', (req, res) => {
 // Get disk usage only
 router.get('/disk', async (req, res) => {
   try {
-    const disk = await monitorService.getDiskUsage();
+    const disk = await monitorService.getDiskUsage(req.sshConnection);
     res.json({
       success: true,
       data: disk
@@ -87,7 +102,7 @@ router.get('/disk', async (req, res) => {
 // Get network stats only
 router.get('/network', async (req, res) => {
   try {
-    const network = await monitorService.getNetworkStats();
+    const network = await monitorService.getNetworkStats(req.sshConnection, req.sshSessionId);
     res.json({
       success: true,
       data: network
@@ -102,9 +117,9 @@ router.get('/network', async (req, res) => {
 });
 
 // Get system info
-router.get('/system', (req, res) => {
+router.get('/system', async (req, res) => {
   try {
-    const system = monitorService.getSystemInfo();
+    const system = await monitorService.getSystemInfo(req.sshConnection);
     res.json({
       success: true,
       data: system
@@ -122,7 +137,7 @@ router.get('/system', (req, res) => {
 router.get('/processes', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const processes = await monitorService.getTopProcesses(limit);
+    const processes = await monitorService.getTopProcesses(req.sshConnection, limit);
     res.json({
       success: true,
       data: processes

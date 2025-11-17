@@ -39,6 +39,7 @@ async function checkSSHStatus() {
             state.sshAuthenticated = true;
             state.sshHost = data.host;
             state.sshUsername = data.username;
+            state.sshSessionId = data.session ? data.session.sessionId : null;
             showDashboard();
             initializeDashboard();
         } else {
@@ -201,6 +202,7 @@ async function handleSSHLogin(e) {
             state.sshAuthenticated = true;
             state.sshHost = host;
             state.sshUsername = username;
+            state.sshSessionId = data.sessionId;  // Store SSH session ID
             showDashboard();
             initializeDashboard();
         } else {
@@ -638,7 +640,8 @@ function createTerminal() {
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
         state.ws.send(JSON.stringify({
             type: 'terminal',
-            action: 'create'
+            action: 'create',
+            sessionId: state.sshSessionId  // Pass SSH session ID
         }));
     }
 }

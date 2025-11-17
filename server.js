@@ -148,12 +148,36 @@ app.get('/', (req, res) => {
 wss.on('connection', (ws, req) => {
   console.log('New WebSocket connection established');
 
+  // Parse session from cookies
+  let sessionId = null;
+  if (req.headers.cookie) {
+    const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {});
+
+    // Extract session ID from cookie (adjust cookie name if needed)
+    const sessionCookie = cookies['connect.sid'];
+    if (sessionCookie) {
+      // Decode session cookie to get sessionId
+      // Session middleware stores it in format: s:{sessionId}.{signature}
+      const decodedCookie = decodeURIComponent(sessionCookie);
+      const match = decodedCookie.match(/^s:([^.]+)\./);
+      if (match) {
+        sessionId = match[1];
+      }
+    }
+  }
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
 
       if (data.type === 'terminal') {
-        terminalHandler.handleTerminal(ws, data);
+        // Pass sessionId from data or from cookie
+        const sshSessionId = data.sessionId || sessionId;
+        terminalHandler.handleTerminal(ws, data, sshSessionId);
       }
     } catch (error) {
       console.error('WebSocket message error:', error);

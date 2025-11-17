@@ -1,4 +1,3 @@
-const os = require('os');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
@@ -10,85 +9,126 @@ class MonitorService {
       memory: [],
       network: []
     };
-    this.previousNetworkStats = null;
-    this.previousCpuInfo = null;
+    this.previousNetworkStats = new Map(); // Per session
   }
 
-  // Get CPU usage percentage
-  async getCpuUsage() {
-    return new Promise((resolve) => {
-      const startMeasure = this.cpuAverage();
+  // Execute command via SSH
+  async executeSSHCommand(sshConnection, command) {
+    return new Promise((resolve, reject) => {
+      sshConnection.exec(command, (err, stream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
 
-      setTimeout(() => {
-        const endMeasure = this.cpuAverage();
-        const idleDifference = endMeasure.idle - startMeasure.idle;
-        const totalDifference = endMeasure.total - startMeasure.total;
-        const percentageCPU = 100 - ~~(100 * idleDifference / totalDifference);
+        let stdout = '';
+        let stderr = '';
 
-        resolve(percentageCPU);
-      }, 100);
+        stream.on('close', (code, signal) => {
+          if (code !== 0 && stderr) {
+            reject(new Error(stderr));
+          } else {
+            resolve(stdout);
+          }
+        });
+
+        stream.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        stream.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+      });
     });
   }
 
-  cpuAverage() {
-    const cpus = os.cpus();
-    let totalIdle = 0, totalTick = 0;
-
-    cpus.forEach((cpu) => {
-      for (let type in cpu.times) {
-        totalTick += cpu.times[type];
-      }
-      totalIdle += cpu.times.idle;
-    });
-
-    return {
-      idle: totalIdle / cpus.length,
-      total: totalTick / cpus.length
-    };
-  }
-
-  // Get memory usage
-  getMemoryUsage() {
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-
-    return {
-      total: totalMem,
-      used: usedMem,
-      free: freeMem,
-      percentage: (usedMem / totalMem * 100).toFixed(2),
-      totalGB: (totalMem / 1024 / 1024 / 1024).toFixed(2),
-      usedGB: (usedMem / 1024 / 1024 / 1024).toFixed(2),
-      freeGB: (freeMem / 1024 / 1024 / 1024).toFixed(2)
-    };
-  }
-
-  // Get disk usage
-  async getDiskUsage() {
+  // Get CPU usage via SSH
+  async getCpuUsage(sshConnection) {
     try {
-      const { stdout } = await execPromise('df -h / | tail -1');
-      const parts = stdout.trim().split(/\s+/);
+      // Use top command to get CPU usage
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        "top -bn2 -d 0.5 | grep '^%Cpu' | tail -n 1 | awk '{print $2}' | sed 's/%us,//'"
+      );
 
-      return {
-        filesystem: parts[0],
-        size: parts[1],
-        used: parts[2],
-        available: parts[3],
-        percentage: parseFloat(parts[4]),
-        mountpoint: parts[5]
-      };
+      const cpuUsage = parseFloat(result.trim()) || 0;
+      return cpuUsage;
+    } catch (error) {
+      console.error('CPU usage error:', error);
+      return 0;
+    }
+  }
+
+  // Get memory usage via SSH
+  async getMemoryUsage(sshConnection) {
+    try {
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        "free -m | grep Mem | awk '{print $1,$2,$3,$4}'"
+      );
+
+      const parts = result.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const totalMem = parseInt(parts[1]) * 1024 * 1024; // MB to bytes
+        const usedMem = parseInt(parts[2]) * 1024 * 1024;
+        const freeMem = parseInt(parts[3]) * 1024 * 1024;
+
+        return {
+          total: totalMem,
+          used: usedMem,
+          free: freeMem,
+          percentage: ((usedMem / totalMem) * 100).toFixed(2),
+          totalGB: (totalMem / 1024 / 1024 / 1024).toFixed(2),
+          usedGB: (usedMem / 1024 / 1024 / 1024).toFixed(2),
+          freeGB: (freeMem / 1024 / 1024 / 1024).toFixed(2)
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Memory usage error:', error);
+      return null;
+    }
+  }
+
+  // Get disk usage via SSH
+  async getDiskUsage(sshConnection) {
+    try {
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        "df -h / | tail -1"
+      );
+
+      const parts = result.trim().split(/\s+/);
+
+      if (parts.length >= 6) {
+        return {
+          filesystem: parts[0],
+          size: parts[1],
+          used: parts[2],
+          available: parts[3],
+          percentage: parseFloat(parts[4]),
+          mountpoint: parts[5]
+        };
+      }
+
+      return null;
     } catch (error) {
       console.error('Disk usage error:', error);
       return null;
     }
   }
 
-  // Get network stats
-  async getNetworkStats() {
+  // Get network stats via SSH
+  async getNetworkStats(sshConnection, sessionId) {
     try {
-      const { stdout } = await execPromise('cat /proc/net/dev');
-      const lines = stdout.trim().split('\n');
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        "cat /proc/net/dev"
+      );
+
+      const lines = result.trim().split('\n');
       let totalRx = 0, totalTx = 0;
 
       for (let i = 2; i < lines.length; i++) {
@@ -105,17 +145,18 @@ class MonitorService {
 
       let rxSpeed = 0, txSpeed = 0;
 
-      if (this.previousNetworkStats) {
-        const timeDiff = Date.now() - this.previousNetworkStats.timestamp;
-        rxSpeed = (totalRx - this.previousNetworkStats.rx) / (timeDiff / 1000);
-        txSpeed = (totalTx - this.previousNetworkStats.tx) / (timeDiff / 1000);
+      const prevStats = this.previousNetworkStats.get(sessionId);
+      if (prevStats) {
+        const timeDiff = Date.now() - prevStats.timestamp;
+        rxSpeed = (totalRx - prevStats.rx) / (timeDiff / 1000);
+        txSpeed = (totalTx - prevStats.tx) / (timeDiff / 1000);
       }
 
-      this.previousNetworkStats = {
+      this.previousNetworkStats.set(sessionId, {
         rx: totalRx,
         tx: totalTx,
         timestamp: Date.now()
-      };
+      });
 
       return {
         rx: totalRx,
@@ -133,43 +174,81 @@ class MonitorService {
     }
   }
 
-  // Get system info
-  getSystemInfo() {
-    return {
-      hostname: os.hostname(),
-      platform: os.platform(),
-      arch: os.arch(),
-      release: os.release(),
-      uptime: os.uptime(),
-      uptimeFormatted: this.formatUptime(os.uptime()),
-      cpuCount: os.cpus().length,
-      cpuModel: os.cpus()[0]?.model || 'Unknown',
-      loadAverage: os.loadavg()
-    };
+  // Get system info via SSH
+  async getSystemInfo(sshConnection) {
+    try {
+      const [hostname, platform, arch, release, uptime, cpuInfo, loadAvg] = await Promise.all([
+        this.executeSSHCommand(sshConnection, 'hostname'),
+        this.executeSSHCommand(sshConnection, 'uname -s'),
+        this.executeSSHCommand(sshConnection, 'uname -m'),
+        this.executeSSHCommand(sshConnection, 'uname -r'),
+        this.executeSSHCommand(sshConnection, 'cat /proc/uptime | awk \'{print $1}\''),
+        this.executeSSHCommand(sshConnection, 'cat /proc/cpuinfo | grep "model name" | head -1 | cut -d: -f2'),
+        this.executeSSHCommand(sshConnection, 'cat /proc/loadavg | awk \'{print $1,$2,$3}\'')
+      ]);
+
+      const uptimeSec = parseFloat(uptime.trim());
+      const loadAvgParts = loadAvg.trim().split(/\s+/).map(parseFloat);
+      const cpuCount = await this.getCpuCount(sshConnection);
+
+      return {
+        hostname: hostname.trim(),
+        platform: platform.trim(),
+        arch: arch.trim(),
+        release: release.trim(),
+        uptime: uptimeSec,
+        uptimeFormatted: this.formatUptime(uptimeSec),
+        cpuCount: cpuCount,
+        cpuModel: cpuInfo.trim(),
+        loadAverage: loadAvgParts
+      };
+    } catch (error) {
+      console.error('System info error:', error);
+      return null;
+    }
   }
 
-  // Get top processes
-  async getTopProcesses(limit = 10) {
+  // Get CPU count via SSH
+  async getCpuCount(sshConnection) {
     try {
-      const { stdout } = await execPromise(`ps aux --sort=-%cpu | head -n ${limit + 1}`);
-      const lines = stdout.trim().split('\n');
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        'cat /proc/cpuinfo | grep processor | wc -l'
+      );
+      return parseInt(result.trim()) || 1;
+    } catch (error) {
+      return 1;
+    }
+  }
+
+  // Get top processes via SSH
+  async getTopProcesses(sshConnection, limit = 10) {
+    try {
+      const result = await this.executeSSHCommand(
+        sshConnection,
+        `ps aux --sort=-%cpu | head -n ${limit + 1}`
+      );
+
+      const lines = result.trim().split('\n');
       const processes = [];
 
       for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].trim().split(/\s+/);
-        processes.push({
-          user: parts[0],
-          pid: parts[1],
-          cpu: parseFloat(parts[2]),
-          memory: parseFloat(parts[3]),
-          vsz: parts[4],
-          rss: parts[5],
-          tty: parts[6],
-          stat: parts[7],
-          start: parts[8],
-          time: parts[9],
-          command: parts.slice(10).join(' ')
-        });
+        if (parts.length >= 11) {
+          processes.push({
+            user: parts[0],
+            pid: parts[1],
+            cpu: parseFloat(parts[2]),
+            memory: parseFloat(parts[3]),
+            vsz: parts[4],
+            rss: parts[5],
+            tty: parts[6],
+            stat: parts[7],
+            start: parts[8],
+            time: parts[9],
+            command: parts.slice(10).join(' ')
+          });
+        }
       }
 
       return processes;
@@ -179,51 +258,66 @@ class MonitorService {
     }
   }
 
-  // Get all stats at once
-  async getAllStats() {
-    const [cpu, memory, disk, network, processes] = await Promise.all([
-      this.getCpuUsage(),
-      Promise.resolve(this.getMemoryUsage()),
-      this.getDiskUsage(),
-      this.getNetworkStats(),
-      this.getTopProcesses()
-    ]);
+  // Get all stats at once via SSH
+  async getAllStats(sshConnection, sessionId) {
+    try {
+      const [cpu, memory, disk, network, systemInfo, processes] = await Promise.all([
+        this.getCpuUsage(sshConnection),
+        this.getMemoryUsage(sshConnection),
+        this.getDiskUsage(sshConnection),
+        this.getNetworkStats(sshConnection, sessionId),
+        this.getSystemInfo(sshConnection),
+        this.getTopProcesses(sshConnection)
+      ]);
 
-    const systemInfo = this.getSystemInfo();
+      // Update history per session
+      if (!this.history[sessionId]) {
+        this.history[sessionId] = {
+          cpu: [],
+          memory: [],
+          network: []
+        };
+      }
 
-    // Add to history
-    this.history.cpu.push({ time: Date.now(), value: cpu });
-    this.history.memory.push({ time: Date.now(), value: parseFloat(memory.percentage) });
+      const sessionHistory = this.history[sessionId];
 
-    if (network) {
-      this.history.network.push({
-        time: Date.now(),
-        rx: network.rxSpeed,
-        tx: network.txSpeed
-      });
+      sessionHistory.cpu.push({ time: Date.now(), value: cpu });
+      if (memory) {
+        sessionHistory.memory.push({ time: Date.now(), value: parseFloat(memory.percentage) });
+      }
+      if (network) {
+        sessionHistory.network.push({
+          time: Date.now(),
+          rx: network.rxSpeed,
+          tx: network.txSpeed
+        });
+      }
+
+      // Limit history size
+      const limit = 60;
+      if (sessionHistory.cpu.length > limit) sessionHistory.cpu.shift();
+      if (sessionHistory.memory.length > limit) sessionHistory.memory.shift();
+      if (sessionHistory.network.length > limit) sessionHistory.network.shift();
+
+      return {
+        cpu: {
+          usage: cpu,
+          cores: systemInfo ? systemInfo.cpuCount : 1,
+          model: systemInfo ? systemInfo.cpuModel : 'Unknown',
+          loadAverage: systemInfo ? systemInfo.loadAverage : [0, 0, 0]
+        },
+        memory,
+        disk,
+        network,
+        system: systemInfo,
+        processes,
+        history: sessionHistory,
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      console.error('Get all stats error:', error);
+      throw error;
     }
-
-    // Limit history size
-    const limit = 60;
-    if (this.history.cpu.length > limit) this.history.cpu.shift();
-    if (this.history.memory.length > limit) this.history.memory.shift();
-    if (this.history.network.length > limit) this.history.network.shift();
-
-    return {
-      cpu: {
-        usage: cpu,
-        cores: systemInfo.cpuCount,
-        model: systemInfo.cpuModel,
-        loadAverage: systemInfo.loadAverage
-      },
-      memory,
-      disk,
-      network,
-      system: systemInfo,
-      processes,
-      history: this.history,
-      timestamp: Date.now()
-    };
   }
 
   // Format uptime to human readable
@@ -240,13 +334,12 @@ class MonitorService {
     return parts.join(' ') || '0m';
   }
 
-  // Format bytes to human readable
-  formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  // Cleanup session history
+  cleanupSession(sessionId) {
+    if (this.history[sessionId]) {
+      delete this.history[sessionId];
+    }
+    this.previousNetworkStats.delete(sessionId);
   }
 }
 
