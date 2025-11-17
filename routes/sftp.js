@@ -31,9 +31,16 @@ router.post('/connect', async (req, res) => {
   try {
     const { host, port, username, password } = req.body;
 
+    if (!host || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Host, username, and password are required'
+      });
+    }
+
     const connection = await sftpService.connect({
-      host: host || config.ssh.host,
-      port: port || config.ssh.port,
+      host,
+      port: port || 22,
       username,
       password
     });

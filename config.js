@@ -14,19 +14,6 @@ module.exports = {
         maxAge: 24 * 60 * 60 * 1000 // 24 hours in milliseconds
     },
 
-    // Default VNC Configuration (can be overridden by user)
-    vnc: {
-        host: 'localhost',
-        port: 5900,
-        password: '' // Leave empty if no password
-    },
-
-    // Default SSH/SFTP Configuration (can be overridden by user)
-    ssh: {
-        host: 'localhost',
-        port: 22
-    },
-
     // File Upload Settings
     upload: {
         maxFileSize: 100 * 1024 * 1024, // 100MB in bytes
@@ -39,9 +26,9 @@ module.exports = {
         rateLimitMax: 100 // max requests per window
     },
 
-    // Default Admin Credentials (only for fallback, SSH is primary auth)
-    admin: {
-        username: 'admin',
-        password: 'admin123' // Change this!
+    // Server Monitoring Settings
+    monitoring: {
+        updateInterval: 2000, // Update every 2 seconds
+        historyLimit: 60 // Keep last 60 data points for graphs
     }
 };

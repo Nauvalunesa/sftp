@@ -13,12 +13,11 @@ const WebSocket = require('ws');
 const config = require('./config');
 
 // Import routes
-const authRoutes = require('./routes/auth');
 const sftpRoutes = require('./routes/sftp');
-const vncRoutes = require('./routes/vnc');
+const monitorRoutes = require('./routes/monitor');
 const systemRoutes = require('./routes/system');
 const terminalHandler = require('./services/terminal');
-const vncProxy = require('./services/vnc-proxy');
+const sshAuthService = require('./services/ssh-auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,10 +56,88 @@ app.use(session({
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
-app.use('/api/auth', authRoutes);
 app.use('/api/sftp', sftpRoutes);
-app.use('/api/vnc', vncRoutes);
+app.use('/api/monitor', monitorRoutes);
 app.use('/api/system', systemRoutes);
+
+// SSH Authentication endpoint
+app.post('/api/ssh/auth', async (req, res) => {
+  try {
+    const { host, port, username, password } = req.body;
+
+    if (!host || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Host, username, and password are required'
+      });
+    }
+
+    const result = await sshAuthService.authenticate({
+      host,
+      port: port || 22,
+      username,
+      password
+    });
+
+    req.session.sshSessionId = result.sessionId;
+    req.session.sshHost = host;
+    req.session.sshUsername = username;
+
+    res.json({
+      success: true,
+      message: 'SSH authentication successful',
+      sessionId: result.sessionId,
+      user: result.user,
+      host: result.host
+    });
+  } catch (error) {
+    console.error('SSH auth error:', error);
+    res.status(401).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// SSH session status
+app.get('/api/ssh/status', (req, res) => {
+  const sessionId = req.session.sshSessionId;
+
+  if (!sessionId) {
+    return res.json({
+      success: true,
+      authenticated: false
+    });
+  }
+
+  const isValid = sshAuthService.isSessionValid(sessionId);
+  const session = sshAuthService.getSession(sessionId);
+
+  res.json({
+    success: true,
+    authenticated: isValid,
+    host: req.session.sshHost,
+    username: req.session.sshUsername,
+    session: session || null
+  });
+});
+
+// SSH disconnect
+app.post('/api/ssh/disconnect', (req, res) => {
+  const sessionId = req.session.sshSessionId;
+
+  if (sessionId) {
+    sshAuthService.closeSession(sessionId);
+    delete req.session.sshSessionId;
+    delete req.session.sshHost;
+    delete req.session.sshUsername;
+  }
+
+  res.json({
+    success: true,
+    message: 'SSH session closed'
+  });
+});
 
 // Serve main page
 app.get('/', (req, res) => {
@@ -73,46 +150,20 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (message) => {
     try {
-      // Check if message is binary (VNC data)
-      if (message instanceof Buffer) {
-        // Forward binary data to VNC if handler exists
-        if (ws._vncMessageHandler) {
-          ws._vncMessageHandler(message);
-        }
-        return;
-      }
-
       const data = JSON.parse(message);
 
       if (data.type === 'terminal') {
         terminalHandler.handleTerminal(ws, data);
-      } else if (data.type === 'vnc') {
-        if (data.action === 'connect') {
-          // Create VNC proxy connection
-          const vncConfig = {
-            host: data.host || config.vnc.host,
-            port: data.port || config.vnc.port
-          };
-
-          const connectionId = vncProxy.createProxy(ws, vncConfig);
-          console.log(`VNC proxy created: ${connectionId}`);
-        } else if (data.action === 'disconnect') {
-          // Connection will be closed by proxy service
-          console.log('VNC disconnect requested');
-        }
       }
     } catch (error) {
       console.error('WebSocket message error:', error);
-      // Only send error for non-binary messages
-      if (!(message instanceof Buffer)) {
-        try {
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: error.message
-          }));
-        } catch (e) {
-          console.error('Error sending error message:', e);
-        }
+      try {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: error.message
+        }));
+      } catch (e) {
+        console.error('Error sending error message:', e);
       }
     }
   });
@@ -120,7 +171,6 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     console.log('WebSocket connection closed');
     terminalHandler.closeTerminal(ws);
-    // VNC proxy will handle its own cleanup via ws.on('close') in proxy service
   });
 
   ws.on('error', (error) => {
@@ -157,10 +207,10 @@ server.listen(PORT, () => {
 ║  Environment: ${config.server.nodeEnv}                    ║
 ║                                                           ║
 ║  Features:                                                ║
-║  - noVNC Remote Desktop                                   ║
+║  - SSH Authentication                                     ║
 ║  - SFTP File Manager                                      ║
 ║  - Web Terminal                                           ║
-║  - System Monitor                                         ║
+║  - Real-time Server Monitoring                            ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });
