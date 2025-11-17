@@ -111,14 +111,14 @@ app.get('/api/ssh/status', (req, res) => {
   }
 
   const isValid = sshAuthService.isSessionValid(sessionId);
-  const session = sshAuthService.getSession(sessionId);
+  const sessionInfo = sshAuthService.getSessionInfo(sessionId);
 
   res.json({
     success: true,
     authenticated: isValid,
     host: req.session.sshHost,
     username: req.session.sshUsername,
-    session: session || null
+    session: sessionInfo
   });
 });
 
@@ -153,7 +153,16 @@ wss.on('connection', (ws, req) => {
       const data = JSON.parse(message);
 
       if (data.type === 'terminal') {
-        terminalHandler.handleTerminal(ws, data);
+        // sessionId must be sent from client
+        if (!data.sessionId) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'SSH session ID required'
+          }));
+          return;
+        }
+
+        terminalHandler.handleTerminal(ws, data, data.sessionId);
       }
     } catch (error) {
       console.error('WebSocket message error:', error);
