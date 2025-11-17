@@ -1,50 +1,61 @@
+// ================================
+// VPS Console Manager - Main App
+// ================================
+
 // Application State
 const state = {
-    authenticated: false,
-    user: null,
-    ws: null,
-    terminalId: null,
-    currentPath: '/',
-    sftpConnected: false,
-    vncConnected: false,
     sshAuthenticated: false,
-    sshSessionId: null,
-    vncCanvas: null,
-    vncContext: null
+    sshHost: null,
+    sshUsername: null,
+    ws: null,
+    terminal: null,
+    currentPath: '/',
+    currentFile: null,
+    monacoEditor: null,
+    charts: {
+        cpu: null,
+        memory: null,
+        network: null
+    },
+    monitoringInterval: null
 };
 
-// Initialize app
+// ================================
+// Initialization
+// ================================
+
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuthentication();
+    checkSSHStatus();
     setupEventListeners();
 });
 
-// Check if user is authenticated
-async function checkAuthentication() {
+// Check SSH authentication status
+async function checkSSHStatus() {
     try {
-        const response = await fetch('/api/auth/check');
+        const response = await fetch('/api/ssh/status');
         const data = await response.json();
 
         if (data.authenticated) {
-            state.authenticated = true;
-            state.user = data.user;
+            state.sshAuthenticated = true;
+            state.sshHost = data.host;
+            state.sshUsername = data.username;
             showDashboard();
             initializeDashboard();
         } else {
             showLogin();
         }
     } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('SSH status check error:', error);
         showLogin();
     }
 }
 
-// Setup event listeners
+// Setup all event listeners
 function setupEventListeners() {
-    // Login form
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
+    // SSH Login form
+    const sshLoginForm = document.getElementById('sshLoginForm');
+    if (sshLoginForm) {
+        sshLoginForm.addEventListener('submit', handleSSHLogin);
     }
 
     // Logout button
@@ -63,129 +74,168 @@ function setupEventListeners() {
         });
     });
 
+    // Monitor page controls
+    const refreshMonitor = document.getElementById('refreshMonitor');
+    if (refreshMonitor) {
+        refreshMonitor.addEventListener('click', () => {
+            fetchMonitoringData();
+        });
+    }
+
     // Terminal controls
     const clearTerminal = document.getElementById('clearTerminal');
     if (clearTerminal) {
         clearTerminal.addEventListener('click', () => {
-            document.getElementById('terminal').innerHTML = '';
+            if (state.terminal) {
+                state.terminal.clear();
+            }
         });
     }
 
     const newTerminal = document.getElementById('newTerminal');
     if (newTerminal) {
-        newTerminal.addEventListener('click', createTerminal);
-    }
-
-    // SSH Authentication for VNC
-    const sshAuthBtn = document.getElementById('sshAuthBtn');
-    if (sshAuthBtn) {
-        sshAuthBtn.addEventListener('click', handleSSHAuthentication);
-    }
-
-    const logoutSSH = document.getElementById('logoutSSH');
-    if (logoutSSH) {
-        logoutSSH.addEventListener('click', handleSSHLogout);
-    }
-
-    // VNC controls
-    const connectVNC = document.getElementById('connectVNC');
-    if (connectVNC) {
-        connectVNC.addEventListener('click', connectVNCSession);
-    }
-
-    const disconnectVNC = document.getElementById('disconnectVNC');
-    if (disconnectVNC) {
-        disconnectVNC.addEventListener('click', disconnectVNCSession);
-    }
-
-    const fullscreenVNC = document.getElementById('fullscreenVNC');
-    if (fullscreenVNC) {
-        fullscreenVNC.addEventListener('click', toggleVNCFullscreen);
-    }
-
-    // SFTP controls
-    const connectSFTP = document.getElementById('connectSFTP');
-    if (connectSFTP) {
-        connectSFTP.addEventListener('click', connectSFTPSession);
-    }
-
-    const uploadFile = document.getElementById('uploadFile');
-    if (uploadFile) {
-        uploadFile.addEventListener('click', () => {
-            document.getElementById('fileUploadInput').click();
+        newTerminal.addEventListener('click', () => {
+            if (state.terminal) {
+                state.terminal.clear();
+                createTerminal();
+            }
         });
     }
 
-    const fileUploadInput = document.getElementById('fileUploadInput');
-    if (fileUploadInput) {
-        fileUploadInput.addEventListener('change', handleFileUpload);
+    // SFTP controls
+    const parentDirBtn = document.getElementById('parentDirBtn');
+    if (parentDirBtn) {
+        parentDirBtn.addEventListener('click', navigateToParent);
     }
 
-    const createFolder = document.getElementById('createFolder');
-    if (createFolder) {
-        createFolder.addEventListener('click', handleCreateFolder);
+    const newFileBtn = document.getElementById('newFileBtn');
+    if (newFileBtn) {
+        newFileBtn.addEventListener('click', handleNewFile);
     }
 
-    const refreshFiles = document.getElementById('refreshFiles');
-    if (refreshFiles) {
-        refreshFiles.addEventListener('click', loadFileList);
+    const newFolderBtn = document.getElementById('newFolderBtn');
+    if (newFolderBtn) {
+        newFolderBtn.addEventListener('click', handleNewFolder);
     }
 
-    // Service controls
-    const serviceButtons = document.querySelectorAll('.service-buttons .btn');
-    serviceButtons.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const action = e.currentTarget.dataset.action;
-            handleServiceAction(action);
+    const refreshFilesBtn = document.getElementById('refreshFilesBtn');
+    if (refreshFilesBtn) {
+        refreshFilesBtn.addEventListener('click', loadFileList);
+    }
+
+    const fileUpload = document.getElementById('fileUpload');
+    if (fileUpload) {
+        fileUpload.addEventListener('change', handleFileUpload);
+    }
+
+    // File editor controls
+    const saveFileBtn = document.getElementById('saveFileBtn');
+    if (saveFileBtn) {
+        saveFileBtn.addEventListener('click', handleFileSave);
+    }
+
+    const closeEditorBtn = document.getElementById('closeEditorBtn');
+    if (closeEditorBtn) {
+        closeEditorBtn.addEventListener('click', closeFileEditor);
+    }
+
+    // Move file modal controls
+    const confirmMoveBtn = document.getElementById('confirmMoveBtn');
+    if (confirmMoveBtn) {
+        confirmMoveBtn.addEventListener('click', handleMoveConfirm);
+    }
+
+    const cancelMoveBtn = document.getElementById('cancelMoveBtn');
+    if (cancelMoveBtn) {
+        cancelMoveBtn.addEventListener('click', () => {
+            document.getElementById('moveFileModal').style.display = 'none';
+        });
+    }
+
+    // Close modals on background click
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    });
+
+    const closeModalBtns = document.querySelectorAll('.close-modal');
+    closeModalBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('.modal').style.display = 'none';
         });
     });
 }
 
-// Authentication
-async function handleLogin(e) {
+// ================================
+// SSH Authentication
+// ================================
+
+async function handleSSHLogin(e) {
     e.preventDefault();
 
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
+    const host = document.getElementById('loginSshHost').value;
+    const port = document.getElementById('loginSshPort').value;
+    const username = document.getElementById('loginSshUsername').value;
+    const password = document.getElementById('loginSshPassword').value;
     const errorDiv = document.getElementById('loginError');
 
+    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+
     try {
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch('/api/ssh/auth', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ host, port, username, password })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            state.authenticated = true;
-            state.user = data.user;
+            state.sshAuthenticated = true;
+            state.sshHost = host;
+            state.sshUsername = username;
             showDashboard();
             initializeDashboard();
         } else {
-            errorDiv.textContent = data.message;
+            errorDiv.textContent = data.message || 'SSH authentication failed';
+            errorDiv.style.display = 'block';
         }
     } catch (error) {
-        console.error('Login error:', error);
-        errorDiv.textContent = 'Login failed. Please try again.';
+        console.error('SSH login error:', error);
+        errorDiv.textContent = 'Connection failed. Please check your credentials and try again.';
+        errorDiv.style.display = 'block';
     }
 }
 
 async function handleLogout() {
     try {
-        await fetch('/api/auth/logout', {
+        // Stop monitoring
+        if (state.monitoringInterval) {
+            clearInterval(state.monitoringInterval);
+            state.monitoringInterval = null;
+        }
+
+        // Close WebSocket
+        if (state.ws) {
+            state.ws.close();
+            state.ws = null;
+        }
+
+        // Disconnect SSH
+        await fetch('/api/ssh/disconnect', {
             method: 'POST'
         });
 
-        state.authenticated = false;
-        state.user = null;
-
-        if (state.ws) {
-            state.ws.close();
-        }
+        state.sshAuthenticated = false;
+        state.sshHost = null;
+        state.sshUsername = null;
 
         showLogin();
     } catch (error) {
@@ -193,7 +243,10 @@ async function handleLogout() {
     }
 }
 
+// ================================
 // UI Navigation
+// ================================
+
 function showLogin() {
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('dashboard').style.display = 'none';
@@ -202,156 +255,399 @@ function showLogin() {
 function showDashboard() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'flex';
-    document.getElementById('currentUser').textContent = state.user.username;
+
+    // Update user info
+    const currentUser = document.getElementById('currentUser');
+    if (currentUser) {
+        currentUser.textContent = `${state.sshUsername}@${state.sshHost}`;
+    }
 }
 
 function navigateToPage(pageName) {
-    // Update navigation
-    document.querySelectorAll('.nav-item').forEach(item => {
+    // Update navigation active state
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
         item.classList.remove('active');
+        if (item.dataset.page === pageName) {
+            item.classList.add('active');
+        }
     });
-    document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
 
-    // Update pages
-    document.querySelectorAll('.page').forEach(page => {
-        page.classList.remove('active');
-    });
-    document.getElementById(`${pageName}Page`).classList.add('active');
+    // Hide all pages
+    const pages = document.querySelectorAll('.page');
+    pages.forEach(page => page.classList.remove('active'));
 
-    // Update title
+    // Show selected page
+    const selectedPage = document.getElementById(pageName + 'Page');
+    if (selectedPage) {
+        selectedPage.classList.add('active');
+    }
+
+    // Update page title
+    const pageTitle = document.getElementById('pageTitle');
     const titles = {
-        overview: 'System Overview',
-        terminal: 'Web Terminal',
-        vnc: 'Remote Desktop',
-        sftp: 'File Manager',
-        services: 'Service Management',
-        network: 'Network Information'
+        'monitor': 'Server Monitoring',
+        'terminal': 'Web Terminal',
+        'sftp': 'File Manager'
     };
-    document.getElementById('pageTitle').textContent = titles[pageName] || 'Dashboard';
+    if (pageTitle && titles[pageName]) {
+        pageTitle.textContent = titles[pageName];
+    }
 
-    // Load page data
-    if (pageName === 'overview') {
-        loadSystemStats();
-    } else if (pageName === 'network') {
-        loadNetworkInfo();
-    } else if (pageName === 'terminal' && !state.ws) {
-        initializeWebSocket();
-    } else if (pageName === 'vnc') {
-        // Check SSH session status when navigating to VNC page
-        checkSSHSessionStatus();
+    // Initialize page-specific features
+    if (pageName === 'monitor') {
+        initMonitoring();
+    } else if (pageName === 'terminal' && !state.terminal) {
+        initTerminal();
+    } else if (pageName === 'sftp') {
+        connectSFTP();
     }
 }
 
-// Check SSH session status for VNC
-async function checkSSHSessionStatus() {
+function initializeDashboard() {
+    // Connect WebSocket
+    connectWebSocket();
+
+    // Initialize monitoring (default page)
+    initMonitoring();
+}
+
+// ================================
+// Server Monitoring
+// ================================
+
+function initMonitoring() {
+    if (!state.charts.cpu) {
+        initializeCharts();
+    }
+
+    // Start monitoring updates
+    if (state.monitoringInterval) {
+        clearInterval(state.monitoringInterval);
+    }
+
+    fetchMonitoringData();
+    state.monitoringInterval = setInterval(fetchMonitoringData, 2000);
+}
+
+function initializeCharts() {
+    // CPU Chart
+    const cpuCtx = document.getElementById('cpuChart');
+    if (cpuCtx) {
+        state.charts.cpu = new Chart(cpuCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU Usage %',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        ticks: { color: '#9ca3af' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+
+    // Memory Chart
+    const memCtx = document.getElementById('memoryChart');
+    if (memCtx) {
+        state.charts.memory = new Chart(memCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Memory Usage %',
+                    data: [],
+                    borderColor: '#8b5cf6',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        ticks: { color: '#9ca3af' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+
+    // Network Chart
+    const netCtx = document.getElementById('networkChart');
+    if (netCtx) {
+        state.charts.network = new Chart(netCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Download (MB/s)',
+                        data: [],
+                        borderColor: '#4ade80',
+                        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Upload (MB/s)',
+                        data: [],
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        ticks: { color: '#9ca3af' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+}
+
+async function fetchMonitoringData() {
     try {
-        const response = await fetch('/api/vnc/ssh-status');
+        const response = await fetch('/api/monitor/stats');
         const data = await response.json();
 
-        if (data.authenticated && data.session) {
-            // SSH session still valid, show VNC console
-            state.sshAuthenticated = true;
-            state.sshSessionId = data.session.sessionId;
-
-            document.getElementById('sshAuthPanel').style.display = 'none';
-            document.getElementById('vncConsolePanel').style.display = 'block';
-            document.getElementById('sshSessionInfo').textContent = `SSH: ${data.session.username}@${data.session.host}`;
-        } else {
-            // No SSH session, show auth panel
-            state.sshAuthenticated = false;
-            state.sshSessionId = null;
-
-            document.getElementById('sshAuthPanel').style.display = 'block';
-            document.getElementById('vncConsolePanel').style.display = 'none';
+        if (data.success) {
+            updateMonitoringUI(data.data);
         }
     } catch (error) {
-        console.error('SSH session check error:', error);
-        // Show auth panel on error
-        document.getElementById('sshAuthPanel').style.display = 'block';
-        document.getElementById('vncConsolePanel').style.display = 'none';
+        console.error('Monitoring fetch error:', error);
     }
 }
 
-// Dashboard Initialization
-function initializeDashboard() {
-    loadSystemStats();
-    initializeWebSocket();
+function updateMonitoringUI(stats) {
+    // Update stat cards
+    if (stats.cpu) {
+        document.getElementById('cpuUsage').textContent = `${Math.round(stats.cpu.usage)}%`;
+        document.getElementById('cpuCores').textContent = `${stats.cpu.cores} Cores`;
+    }
 
-    // Refresh stats every 5 seconds
-    setInterval(loadSystemStats, 5000);
+    if (stats.memory) {
+        document.getElementById('memoryUsage').textContent = `${stats.memory.percentage}%`;
+        document.getElementById('memoryDetails').textContent =
+            `${stats.memory.usedGB} GB / ${stats.memory.totalGB} GB`;
+    }
+
+    if (stats.disk) {
+        document.getElementById('diskUsage').textContent = `${Math.round(stats.disk.percentage)}%`;
+        document.getElementById('diskDetails').textContent =
+            `${stats.disk.used} / ${stats.disk.size}`;
+    }
+
+    if (stats.system) {
+        document.getElementById('uptime').textContent = stats.system.uptimeFormatted;
+
+        // System info
+        document.getElementById('sysHostname').textContent = stats.system.hostname;
+        document.getElementById('sysPlatform').textContent = stats.system.platform;
+        document.getElementById('sysArch').textContent = stats.system.arch;
+        document.getElementById('sysCpuModel').textContent = stats.system.cpuModel;
+        document.getElementById('sysLoadAvg').textContent =
+            stats.system.loadAverage.map(l => l.toFixed(2)).join(', ');
+    }
+
+    // Network stats
+    if (stats.network) {
+        document.getElementById('networkRx').textContent = `${stats.network.rxSpeedMB} MB/s`;
+        document.getElementById('networkTx').textContent = `${stats.network.txSpeedMB} MB/s`;
+        document.getElementById('networkRxTotal').textContent = `Total: ${stats.network.totalRxGB} GB`;
+        document.getElementById('networkTxTotal').textContent = `Total: ${stats.network.totalTxGB} GB`;
+    }
+
+    // Update charts
+    if (stats.history) {
+        updateCharts(stats.history);
+    }
+
+    // Update process list
+    if (stats.processes) {
+        updateProcessList(stats.processes);
+    }
 }
 
-// System Stats
-async function loadSystemStats() {
-    try {
-        const [statsResponse, infoResponse] = await Promise.all([
-            fetch('/api/system/stats'),
-            fetch('/api/system/info')
-        ]);
+function updateCharts(history) {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString();
 
-        const stats = await statsResponse.json();
-        const info = await infoResponse.json();
+    // CPU Chart
+    if (state.charts.cpu && history.cpu && history.cpu.length > 0) {
+        const chart = state.charts.cpu;
+        const cpuValue = history.cpu[history.cpu.length - 1].value;
 
-        if (stats.success) {
-            updateSystemStats(stats.stats);
+        chart.data.labels.push(timeLabel);
+        chart.data.datasets[0].data.push(cpuValue);
+
+        if (chart.data.labels.length > 60) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
         }
 
-        if (info.success) {
-            updateSystemInfo(info.info);
+        chart.update('none');
+    }
+
+    // Memory Chart
+    if (state.charts.memory && history.memory && history.memory.length > 0) {
+        const chart = state.charts.memory;
+        const memValue = history.memory[history.memory.length - 1].value;
+
+        chart.data.labels.push(timeLabel);
+        chart.data.datasets[0].data.push(memValue);
+
+        if (chart.data.labels.length > 60) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
         }
-    } catch (error) {
-        console.error('Error loading system stats:', error);
+
+        chart.update('none');
+    }
+
+    // Network Chart
+    if (state.charts.network && history.network && history.network.length > 0) {
+        const chart = state.charts.network;
+        const netData = history.network[history.network.length - 1];
+        const rxMB = (netData.rx / 1024 / 1024).toFixed(2);
+        const txMB = (netData.tx / 1024 / 1024).toFixed(2);
+
+        chart.data.labels.push(timeLabel);
+        chart.data.datasets[0].data.push(rxMB);
+        chart.data.datasets[1].data.push(txMB);
+
+        if (chart.data.labels.length > 60) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[1].data.shift();
+        }
+
+        chart.update('none');
     }
 }
 
-function updateSystemStats(stats) {
-    // CPU
-    document.getElementById('cpuUsage').textContent = stats.cpu.usage.total + '%';
+function updateProcessList(processes) {
+    const listContainer = document.getElementById('processList');
+    if (!listContainer) return;
 
-    // Memory
-    const memUsed = (stats.memory.used / (1024 * 1024 * 1024)).toFixed(2);
-    const memTotal = (stats.memory.total / (1024 * 1024 * 1024)).toFixed(2);
-    document.getElementById('memoryUsage').textContent = stats.memory.usagePercent + '%';
-    document.getElementById('memoryDetails').textContent = `${memUsed} GB / ${memTotal} GB`;
+    let html = '';
+    processes.slice(0, 10).forEach(proc => {
+        html += `
+            <div class="process-item">
+                <div class="process-pid">${proc.pid}</div>
+                <div class="process-cpu">${proc.cpu}%</div>
+                <div class="process-mem">${proc.memory}%</div>
+                <div class="process-command">${proc.command}</div>
+            </div>
+        `;
+    });
 
-    // Disk
-    if (stats.disk.usagePercent) {
-        document.getElementById('diskUsage').textContent = stats.disk.usagePercent;
-        document.getElementById('diskDetails').textContent = `${stats.disk.used} / ${stats.disk.size}`;
+    listContainer.innerHTML = html;
+}
+
+// ================================
+// Terminal
+// ================================
+
+function initTerminal() {
+    const terminalDiv = document.getElementById('terminal');
+    if (!terminalDiv) return;
+
+    // Initialize xterm.js terminal
+    state.terminal = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        theme: {
+            background: '#1e293b',
+            foreground: '#f1f5f9',
+            cursor: '#3b82f6',
+            selection: 'rgba(59, 130, 246, 0.3)'
+        },
+        cols: 80,
+        rows: 24
+    });
+
+    state.terminal.open(terminalDiv);
+
+    // Create terminal session
+    createTerminal();
+
+    // Handle terminal input
+    state.terminal.onData(data => {
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({
+                type: 'terminal',
+                action: 'input',
+                input: data
+            }));
+        }
+    });
+}
+
+function createTerminal() {
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({
+            type: 'terminal',
+            action: 'create'
+        }));
     }
-
-    // Uptime
-    const uptime = formatUptime(stats.uptime);
-    document.getElementById('uptime').textContent = uptime;
-
-    // Load Average
-    const loadAvg = stats.loadAverage.map(l => l.toFixed(2)).join(', ');
-    document.getElementById('loadAverage').innerHTML = `
-        <div><strong>1 min:</strong> ${stats.loadAverage[0].toFixed(2)}</div>
-        <div><strong>5 min:</strong> ${stats.loadAverage[1].toFixed(2)}</div>
-        <div><strong>15 min:</strong> ${stats.loadAverage[2].toFixed(2)}</div>
-    `;
 }
 
-function updateSystemInfo(info) {
-    document.getElementById('systemInfo').innerHTML = `
-        <div><strong>Hostname:</strong> ${info.hostname}</div>
-        <div><strong>Platform:</strong> ${info.platform}</div>
-        <div><strong>Architecture:</strong> ${info.arch}</div>
-        <div><strong>CPUs:</strong> ${info.cpus} cores</div>
-        <div><strong>Node Version:</strong> ${info.nodeVersion}</div>
-    `;
-}
+// ================================
+// WebSocket
+// ================================
 
-function formatUptime(seconds) {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${days}d ${hours}h ${minutes}m`;
-}
-
-// WebSocket for Terminal
-function initializeWebSocket() {
+function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -359,13 +655,15 @@ function initializeWebSocket() {
 
     state.ws.onopen = () => {
         console.log('WebSocket connected');
-        createTerminal();
     };
 
     state.ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            handleWebSocketMessage(data);
+
+            if (data.type === 'terminal') {
+                handleTerminalMessage(data);
+            }
         } catch (error) {
             console.error('WebSocket message error:', error);
         }
@@ -373,467 +671,262 @@ function initializeWebSocket() {
 
     state.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        showToast('WebSocket connection error', 'error');
     };
 
     state.ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        // Reconnect after 3 seconds
+        console.log('WebSocket closed');
+        // Attempt to reconnect after 3 seconds
         setTimeout(() => {
-            if (state.authenticated) {
-                initializeWebSocket();
+            if (state.sshAuthenticated) {
+                connectWebSocket();
             }
         }, 3000);
     };
 }
 
-function handleWebSocketMessage(data) {
-    if (data.type === 'terminal') {
-        if (data.action === 'created') {
-            state.terminalId = data.terminalId;
-            showToast('Terminal created', 'success');
-        } else if (data.action === 'output') {
-            appendToTerminal(data.data);
-        } else if (data.action === 'exit') {
-            appendToTerminal(`\nTerminal exited with code ${data.exitCode}\n`);
-        }
-    } else if (data.type === 'vnc') {
-        if (data.status === 'connected') {
-            showToast('VNC connected', 'success');
+function handleTerminalMessage(data) {
+    if (data.action === 'output' && state.terminal) {
+        state.terminal.write(data.data);
+    } else if (data.action === 'created') {
+        console.log('Terminal created');
+    } else if (data.action === 'exit') {
+        console.log('Terminal exited');
+        if (state.terminal) {
+            state.terminal.write('\r\n\r\nTerminal session ended. Click "New" to create a new session.\r\n');
         }
     }
 }
 
-// Terminal Functions
-function createTerminal() {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-        showToast('WebSocket not connected', 'error');
-        return;
-    }
+// ================================
+// SFTP File Manager
+// ================================
 
-    state.ws.send(JSON.stringify({
-        type: 'terminal',
-        action: 'create'
-    }));
-}
-
-function appendToTerminal(text) {
-    const terminal = document.getElementById('terminal');
-    terminal.textContent += text;
-    terminal.scrollTop = terminal.scrollHeight;
-}
-
-// Setup terminal input
-document.addEventListener('keypress', (e) => {
-    const terminalPage = document.getElementById('terminalPage');
-    if (terminalPage.classList.contains('active') && state.terminalId) {
-        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify({
-                type: 'terminal',
-                action: 'input',
-                terminalId: state.terminalId,
-                input: e.key
-            }));
-        }
-    }
-});
-
-// SSH Authentication Functions
-async function handleSSHAuthentication() {
-    const host = document.getElementById('sshHost').value;
-    const port = document.getElementById('sshPort').value;
-    const username = document.getElementById('sshUsername').value;
-    const password = document.getElementById('sshPassword').value;
-    const statusDiv = document.getElementById('sshAuthStatus');
-
-    if (!username || !password) {
-        statusDiv.textContent = 'Please enter username and password';
-        statusDiv.className = 'auth-status error';
-        return;
-    }
-
-    statusDiv.textContent = 'Authenticating...';
-    statusDiv.className = 'auth-status';
-
-    try {
-        const response = await fetch('/api/vnc/ssh-auth', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ host, port, username, password })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            state.sshAuthenticated = true;
-            state.sshSessionId = data.sessionId;
-
-            statusDiv.textContent = 'SSH authentication successful!';
-            statusDiv.className = 'auth-status success';
-
-            // Show VNC console panel
-            setTimeout(() => {
-                document.getElementById('sshAuthPanel').style.display = 'none';
-                document.getElementById('vncConsolePanel').style.display = 'block';
-                document.getElementById('sshSessionInfo').textContent = `SSH: ${data.user}@${data.host}`;
-                showToast('SSH authenticated. You can now connect to VNC', 'success');
-            }, 1000);
-        } else {
-            statusDiv.textContent = data.message;
-            statusDiv.className = 'auth-status error';
-        }
-    } catch (error) {
-        console.error('SSH auth error:', error);
-        statusDiv.textContent = 'Authentication failed';
-        statusDiv.className = 'auth-status error';
-    }
-}
-
-async function handleSSHLogout() {
-    try {
-        // Disconnect VNC first if connected
-        if (state.vncConnected) {
-            disconnectVNCSession();
-        }
-
-        const response = await fetch('/api/vnc/ssh-disconnect', {
-            method: 'POST'
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            state.sshAuthenticated = false;
-            state.sshSessionId = null;
-
-            // Show SSH auth panel again
-            document.getElementById('vncConsolePanel').style.display = 'none';
-            document.getElementById('sshAuthPanel').style.display = 'block';
-
-            // Clear form
-            document.getElementById('sshUsername').value = '';
-            document.getElementById('sshPassword').value = '';
-            document.getElementById('sshAuthStatus').textContent = '';
-
-            showToast('SSH session closed', 'success');
-        }
-    } catch (error) {
-        console.error('SSH logout error:', error);
-        showToast('Logout failed', 'error');
-    }
-}
-
-// VNC Functions
-async function connectVNCSession() {
-    if (!state.sshAuthenticated) {
-        showToast('Please authenticate with SSH first', 'error');
-        return;
-    }
-
-    if (state.vncConnected) {
-        showToast('VNC already connected', 'info');
-        return;
-    }
-
-    // Check SSH status first
-    try {
-        const statusResponse = await fetch('/api/vnc/ssh-status');
-        const statusData = await statusResponse.json();
-
-        if (!statusData.authenticated) {
-            showToast('SSH session expired. Please re-authenticate', 'error');
-            handleSSHLogout();
-            return;
-        }
-    } catch (error) {
-        console.error('SSH status check error:', error);
-        showToast('Failed to verify SSH session', 'error');
-        return;
-    }
-
-    updateVNCStatus('connecting');
-    showToast('Connecting to VNC server...', 'info');
-
-    try {
-        // Initialize WebSocket if not already
-        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-            initializeWebSocket();
-            // Wait for connection
-            await new Promise((resolve) => {
-                const checkConnection = setInterval(() => {
-                    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                        clearInterval(checkConnection);
-                        resolve();
-                    }
-                }, 100);
-
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    clearInterval(checkConnection);
-                    resolve();
-                }, 5000);
-            });
-        }
-
-        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            // Send VNC connect request
-            state.ws.send(JSON.stringify({
-                type: 'vnc',
-                action: 'connect',
-                sshSessionId: state.sshSessionId
-            }));
-
-            // Setup canvas
-            setupVNCCanvas();
-
-            // Update UI
-            state.vncConnected = true;
-            document.getElementById('connectVNC').style.display = 'none';
-            document.getElementById('disconnectVNC').style.display = 'inline-flex';
-            document.querySelector('.vnc-placeholder').style.display = 'none';
-            document.getElementById('vncCanvas').style.display = 'block';
-
-            updateVNCStatus('connected');
-            showToast('VNC connected successfully!', 'success');
-        } else {
-            throw new Error('WebSocket not connected');
-        }
-    } catch (error) {
-        console.error('VNC connection error:', error);
-        updateVNCStatus('disconnected');
-        showToast('VNC connection failed: ' + error.message, 'error');
-    }
-}
-
-function disconnectVNCSession() {
-    if (!state.vncConnected) {
-        return;
-    }
-
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({
-            type: 'vnc',
-            action: 'disconnect'
-        }));
-    }
-
-    state.vncConnected = false;
-    document.getElementById('connectVNC').style.display = 'inline-flex';
-    document.getElementById('disconnectVNC').style.display = 'none';
-    document.getElementById('vncCanvas').style.display = 'none';
-    document.querySelector('.vnc-placeholder').style.display = 'block';
-
-    updateVNCStatus('disconnected');
-    showToast('VNC disconnected', 'info');
-}
-
-function setupVNCCanvas() {
-    const canvas = document.getElementById('vncCanvas');
-    state.vncCanvas = canvas;
-    state.vncContext = canvas.getContext('2d');
-
-    // Set canvas size
-    canvas.width = 1024;
-    canvas.height = 768;
-
-    // Draw initial screen
-    state.vncContext.fillStyle = '#000';
-    state.vncContext.fillRect(0, 0, canvas.width, canvas.height);
-    state.vncContext.fillStyle = '#0f0';
-    state.vncContext.font = '20px monospace';
-    state.vncContext.fillText('VNC Connected - Waiting for screen data...', 50, 50);
-
-    // Setup mouse and keyboard event listeners
-    canvas.addEventListener('mousedown', handleVNCMouse);
-    canvas.addEventListener('mouseup', handleVNCMouse);
-    canvas.addEventListener('mousemove', handleVNCMouse);
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Capture keyboard input
-    canvas.setAttribute('tabindex', '0');
-    canvas.focus();
-    canvas.addEventListener('keydown', handleVNCKeyboard);
-    canvas.addEventListener('keyup', handleVNCKeyboard);
-}
-
-function handleVNCMouse(e) {
-    if (!state.vncConnected || !state.ws) return;
-
-    const rect = state.vncCanvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) * (state.vncCanvas.width / rect.width));
-    const y = Math.floor((e.clientY - rect.top) * (state.vncCanvas.height / rect.height));
-
-    const mouseData = {
-        type: 'vnc-mouse',
-        x,
-        y,
-        buttons: e.buttons,
-        eventType: e.type
-    };
-
-    try {
-        state.ws.send(JSON.stringify(mouseData));
-    } catch (error) {
-        console.error('Error sending mouse data:', error);
-    }
-}
-
-function handleVNCKeyboard(e) {
-    if (!state.vncConnected || !state.ws) return;
-
-    e.preventDefault();
-
-    const keyData = {
-        type: 'vnc-keyboard',
-        key: e.key,
-        code: e.code,
-        keyCode: e.keyCode,
-        eventType: e.type
-    };
-
-    try {
-        state.ws.send(JSON.stringify(keyData));
-    } catch (error) {
-        console.error('Error sending keyboard data:', error);
-    }
-}
-
-function updateVNCStatus(status) {
-    const statusEl = document.getElementById('vncStatus');
-    statusEl.className = '';
-    statusEl.classList.add(status);
-
-    const statusText = {
-        connected: 'Connected',
-        connecting: 'Connecting...',
-        disconnected: 'Disconnected'
-    };
-
-    statusEl.textContent = `Status: ${statusText[status] || status}`;
-}
-
-function toggleVNCFullscreen() {
-    const viewer = document.getElementById('vncViewer');
-    if (!document.fullscreenElement) {
-        viewer.requestFullscreen();
-    } else {
-        document.exitFullscreen();
-    }
-}
-
-// SFTP Functions
-async function connectSFTPSession() {
-    const host = document.getElementById('sftpHost').value;
-    const port = document.getElementById('sftpPort').value;
-    const username = document.getElementById('sftpUsername').value;
-    const password = document.getElementById('sftpPassword').value;
-
-    if (!username || !password) {
-        showToast('Please enter username and password', 'error');
-        return;
-    }
-
+async function connectSFTP() {
     try {
         const response = await fetch('/api/sftp/connect', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ host, port, username, password })
+            body: JSON.stringify({
+                host: state.sshHost,
+                port: 22,
+                username: state.sshUsername,
+                password: '' // Using existing SSH session
+            })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            state.sftpConnected = true;
-            showToast('SFTP connected successfully', 'success');
             loadFileList();
-        } else {
-            showToast(data.message, 'error');
         }
     } catch (error) {
-        console.error('SFTP connection error:', error);
-        showToast('SFTP connection failed', 'error');
+        console.error('SFTP connect error:', error);
     }
 }
 
-async function loadFileList(path = '/') {
-    if (!state.sftpConnected) {
-        return;
+async function loadFileList(path = null) {
+    if (path) {
+        state.currentPath = path;
     }
 
     try {
-        const response = await fetch(`/api/sftp/list?path=${encodeURIComponent(path)}`);
+        const response = await fetch(`/api/sftp/list?path=${encodeURIComponent(state.currentPath)}`);
         const data = await response.json();
 
         if (data.success) {
-            state.currentPath = data.path;
-            document.getElementById('currentPath').textContent = data.path;
-            renderFileList(data.files);
-        } else {
-            showToast(data.message, 'error');
+            displayFileList(data.files);
+            document.getElementById('currentPath').textContent = state.currentPath;
         }
     } catch (error) {
         console.error('File list error:', error);
-        showToast('Failed to load files', 'error');
     }
 }
 
-function renderFileList(files) {
+function displayFileList(files) {
     const fileList = document.getElementById('fileList');
+    if (!fileList) return;
 
     if (!files || files.length === 0) {
-        fileList.innerHTML = '<tr><td colspan="4" class="no-files">No files found</td></tr>';
+        fileList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-folder-open"></i>
+                <p>No files to display</p>
+            </div>
+        `;
         return;
     }
 
-    fileList.innerHTML = files.map(file => {
-        const icon = file.type === 'directory' ? 'fa-folder' : 'fa-file';
-        const size = file.type === 'directory' ? '-' : formatFileSize(file.size);
-        const date = new Date(file.modified).toLocaleString();
+    let html = '<div class="file-grid">';
 
-        return `
-            <tr>
-                <td>
-                    <div class="file-name" onclick="handleFileClick('${file.name}', '${file.type}')">
-                        <i class="fas ${icon}"></i>
-                        <span>${file.name}</span>
-                    </div>
-                </td>
-                <td>${size}</td>
-                <td>${date}</td>
-                <td>
-                    <div class="file-actions">
-                        ${file.type === 'file' ? `<button onclick="downloadFile('${file.name}')" title="Download"><i class="fas fa-download"></i></button>` : ''}
-                        <button onclick="renameFile('${file.name}')" title="Rename"><i class="fas fa-edit"></i></button>
-                        <button onclick="deleteFile('${file.name}', '${file.type}')" title="Delete"><i class="fas fa-trash"></i></button>
-                    </div>
-                </td>
-            </tr>
+    files.forEach(file => {
+        const icon = file.type === 'd' ? 'fa-folder' : 'fa-file';
+        const fileClass = file.type === 'd' ? 'directory' : 'file';
+
+        html += `
+            <div class="file-item ${fileClass}" data-name="${file.name}" data-type="${file.type}">
+                <i class="fas ${icon}"></i>
+                <span class="file-name">${file.name}</span>
+                <div class="file-actions">
+                    ${file.type === '-' ? `
+                        <button class="btn-icon" onclick="handleFileEdit('${file.name}')" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    ` : ''}
+                    <button class="btn-icon" onclick="handleFileDownload('${file.name}')" title="Download">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button class="btn-icon" onclick="handleFileDelete('${file.name}', '${file.type}')" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
         `;
-    }).join('');
+    });
+
+    html += '</div>';
+    fileList.innerHTML = html;
+
+    // Add click handlers for directories
+    const dirItems = fileList.querySelectorAll('.file-item.directory');
+    dirItems.forEach(item => {
+        item.addEventListener('dblclick', () => {
+            const dirName = item.dataset.name;
+            const newPath = state.currentPath === '/' ? `/${dirName}` : `${state.currentPath}/${dirName}`;
+            loadFileList(newPath);
+        });
+    });
 }
 
-function handleFileClick(fileName, fileType) {
-    if (fileType === 'directory') {
-        const newPath = state.currentPath === '/' ? `/${fileName}` : `${state.currentPath}/${fileName}`;
-        loadFileList(newPath);
+function navigateToParent() {
+    if (state.currentPath === '/') return;
+
+    const parts = state.currentPath.split('/');
+    parts.pop();
+    const parentPath = parts.join('/') || '/';
+    loadFileList(parentPath);
+}
+
+async function handleFileEdit(filename) {
+    const filePath = state.currentPath === '/' ? `/${filename}` : `${state.currentPath}/${filename}`;
+
+    try {
+        const response = await fetch(`/api/sftp/download?path=${encodeURIComponent(filePath)}`);
+        const content = await response.text();
+
+        state.currentFile = filePath;
+        openFileEditor(filename, content);
+    } catch (error) {
+        console.error('File edit error:', error);
+        alert('Failed to open file');
     }
 }
 
-async function downloadFile(fileName) {
-    const filePath = state.currentPath === '/' ? `/${fileName}` : `${state.currentPath}/${fileName}`;
+function openFileEditor(filename, content) {
+    const modal = document.getElementById('fileEditorModal');
+    const editorContainer = document.getElementById('monacoEditor');
+
+    document.getElementById('editorFileName').textContent = `Editing: ${filename}`;
+    modal.style.display = 'block';
+
+    // Initialize Monaco Editor if not already initialized
+    if (!state.monacoEditor) {
+        require(['vs/editor/editor.main'], function() {
+            state.monacoEditor = monaco.editor.create(editorContainer, {
+                value: content,
+                language: detectLanguage(filename),
+                theme: 'vs-dark',
+                automaticLayout: true,
+                fontSize: 14,
+                minimap: { enabled: true },
+                lineNumbers: 'on',
+                roundedSelection: false,
+                scrollBeyondLastLine: false,
+                readOnly: false
+            });
+        });
+    } else {
+        state.monacoEditor.setValue(content);
+        state.monacoEditor.setModel(monaco.editor.createModel(content, detectLanguage(filename)));
+    }
+}
+
+function detectLanguage(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const langMap = {
+        'js': 'javascript',
+        'ts': 'typescript',
+        'jsx': 'javascript',
+        'tsx': 'typescript',
+        'json': 'json',
+        'html': 'html',
+        'css': 'css',
+        'scss': 'scss',
+        'py': 'python',
+        'rb': 'ruby',
+        'php': 'php',
+        'java': 'java',
+        'c': 'c',
+        'cpp': 'cpp',
+        'cs': 'csharp',
+        'go': 'go',
+        'rs': 'rust',
+        'sh': 'shell',
+        'bash': 'shell',
+        'yml': 'yaml',
+        'yaml': 'yaml',
+        'xml': 'xml',
+        'md': 'markdown',
+        'sql': 'sql'
+    };
+    return langMap[ext] || 'plaintext';
+}
+
+async function handleFileSave() {
+    if (!state.monacoEditor || !state.currentFile) return;
+
+    const content = state.monacoEditor.getValue();
+
+    try {
+        const response = await fetch('/api/sftp/write-file', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                path: state.currentFile,
+                content: content
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('File saved successfully');
+        } else {
+            alert('Failed to save file: ' + data.message);
+        }
+    } catch (error) {
+        console.error('File save error:', error);
+        alert('Failed to save file');
+    }
+}
+
+function closeFileEditor() {
+    document.getElementById('fileEditorModal').style.display = 'none';
+    state.currentFile = null;
+}
+
+async function handleFileDownload(filename) {
+    const filePath = state.currentPath === '/' ? `/${filename}` : `${state.currentPath}/${filename}`;
     window.open(`/api/sftp/download?path=${encodeURIComponent(filePath)}`, '_blank');
 }
 
-async function deleteFile(fileName, fileType) {
-    if (!confirm(`Are you sure you want to delete ${fileName}?`)) {
-        return;
-    }
+async function handleFileDelete(filename, type) {
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
-    const filePath = state.currentPath === '/' ? `/${fileName}` : `${state.currentPath}/${fileName}`;
+    const filePath = state.currentPath === '/' ? `/${filename}` : `${state.currentPath}/${filename}`;
 
     try {
         const response = await fetch('/api/sftp/delete', {
@@ -843,91 +936,59 @@ async function deleteFile(fileName, fileType) {
             },
             body: JSON.stringify({
                 path: filePath,
-                isDirectory: fileType === 'directory'
+                isDirectory: type === 'd'
             })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            showToast('Deleted successfully', 'success');
-            loadFileList(state.currentPath);
+            loadFileList();
         } else {
-            showToast(data.message, 'error');
+            alert('Failed to delete: ' + data.message);
         }
     } catch (error) {
         console.error('Delete error:', error);
-        showToast('Delete failed', 'error');
+        alert('Failed to delete file');
     }
 }
 
-async function renameFile(fileName) {
-    const newName = prompt('Enter new name:', fileName);
-    if (!newName || newName === fileName) {
-        return;
-    }
+async function handleNewFile() {
+    const filename = prompt('Enter new file name:');
+    if (!filename) return;
 
-    const oldPath = state.currentPath === '/' ? `/${fileName}` : `${state.currentPath}/${fileName}`;
-    const newPath = state.currentPath === '/' ? `/${newName}` : `${state.currentPath}/${newName}`;
+    const filePath = state.currentPath === '/' ? `/${filename}` : `${state.currentPath}/${filename}`;
 
     try {
-        const response = await fetch('/api/sftp/rename', {
+        const response = await fetch('/api/sftp/write-file', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ oldPath, newPath })
+            body: JSON.stringify({
+                path: filePath,
+                content: ''
+            })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            showToast('Renamed successfully', 'success');
-            loadFileList(state.currentPath);
+            loadFileList();
         } else {
-            showToast(data.message, 'error');
+            alert('Failed to create file: ' + data.message);
         }
     } catch (error) {
-        console.error('Rename error:', error);
-        showToast('Rename failed', 'error');
+        console.error('Create file error:', error);
+        alert('Failed to create file');
     }
 }
 
-async function handleFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+async function handleNewFolder() {
+    const foldername = prompt('Enter new folder name:');
+    if (!foldername) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('remotePath', state.currentPath);
-
-    try {
-        const response = await fetch('/api/sftp/upload', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showToast('File uploaded successfully', 'success');
-            loadFileList(state.currentPath);
-        } else {
-            showToast(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Upload error:', error);
-        showToast('Upload failed', 'error');
-    }
-
-    e.target.value = '';
-}
-
-async function handleCreateFolder() {
-    const folderName = prompt('Enter folder name:');
-    if (!folderName) return;
-
-    const folderPath = state.currentPath === '/' ? `/${folderName}` : `${state.currentPath}/${folderName}`;
+    const folderPath = state.currentPath === '/' ? `/${foldername}` : `${state.currentPath}/${foldername}`;
 
     try {
         const response = await fetch('/api/sftp/mkdir', {
@@ -935,108 +996,59 @@ async function handleCreateFolder() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path: folderPath })
+            body: JSON.stringify({
+                path: folderPath
+            })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            showToast('Folder created successfully', 'success');
-            loadFileList(state.currentPath);
+            loadFileList();
         } else {
-            showToast(data.message, 'error');
+            alert('Failed to create folder: ' + data.message);
         }
     } catch (error) {
         console.error('Create folder error:', error);
-        showToast('Create folder failed', 'error');
+        alert('Failed to create folder');
     }
 }
 
-// Service Management
-async function handleServiceAction(action) {
-    const serviceName = document.getElementById('serviceName').value;
+async function handleFileUpload(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    if (!serviceName) {
-        showToast('Please enter a service name', 'error');
-        return;
-    }
+    for (let file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('remotePath', state.currentPath);
 
-    try {
-        const response = await fetch(`/api/system/service/${action}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ service: serviceName })
-        });
+        try {
+            const response = await fetch('/api/sftp/upload', {
+                method: 'POST',
+                body: formData
+            });
 
-        const data = await response.json();
-        const output = document.getElementById('serviceOutput');
+            const data = await response.json();
 
-        if (data.success) {
-            output.textContent = `[${new Date().toLocaleTimeString()}] ${data.message}\n${data.output || ''}`;
-            showToast(`Service ${action} completed`, 'success');
-        } else {
-            output.textContent = `[${new Date().toLocaleTimeString()}] Error: ${data.message}\n${data.stderr || ''}`;
-            showToast(`Service ${action} failed`, 'error');
+            if (!data.success) {
+                alert(`Failed to upload ${file.name}: ${data.message}`);
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            alert(`Failed to upload ${file.name}`);
         }
-    } catch (error) {
-        console.error('Service action error:', error);
-        showToast('Service action failed', 'error');
     }
+
+    // Reload file list
+    setTimeout(() => loadFileList(), 500);
+
+    // Reset file input
+    e.target.value = '';
 }
 
-// Network Information
-async function loadNetworkInfo() {
-    try {
-        const response = await fetch('/api/system/network');
-        const data = await response.json();
-
-        if (data.success) {
-            renderNetworkInfo(data.interfaces);
-        }
-    } catch (error) {
-        console.error('Network info error:', error);
-    }
-}
-
-function renderNetworkInfo(interfaces) {
-    const networkInfo = document.getElementById('networkInfo');
-
-    networkInfo.innerHTML = Object.entries(interfaces).map(([name, addrs]) => {
-        const addrList = addrs.map(addr => `
-            <div style="padding: 10px; margin: 5px 0; background: var(--darker-bg); border-radius: 5px;">
-                <strong>Family:</strong> ${addr.family}<br>
-                <strong>Address:</strong> ${addr.address}<br>
-                <strong>Netmask:</strong> ${addr.netmask}<br>
-                <strong>MAC:</strong> ${addr.mac}
-            </div>
-        `).join('');
-
-        return `
-            <div class="network-interface">
-                <h3>${name}</h3>
-                ${addrList}
-            </div>
-        `;
-    }).join('');
-}
-
-// Utility Functions
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-}
-
-function showToast(message, type = 'info') {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = `toast show ${type}`;
-
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 3000);
+function handleMoveConfirm() {
+    // Implement move/copy functionality
+    alert('Move/Copy functionality coming soon');
+    document.getElementById('moveFileModal').style.display = 'none';
 }
