@@ -36,18 +36,20 @@ class TerminalService {
 
     const sshConnection = session.connection;
 
-    // Create SSH shell
+    // Create SSH shell with live terminal modes
     sshConnection.shell({
       term: 'xterm-256color',
       cols: 80,
       rows: 24,
       modes: {
-        // Enable CTRL+C, CTRL+D, etc.
-        ECHO: 1,
-        ISIG: 1,
-        ICANON: 1,
-        ICRNL: 1,
-        OPOST: 1
+        // TTY modes for live interactive terminal
+        ECHO: 1,      // Echo input characters
+        ICANON: 0,    // Disable canonical mode for live input
+        ISIG: 1,      // Enable signals (CTRL+C, CTRL+Z)
+        ICRNL: 1,     // Map CR to NL on input
+        ONLCR: 1,     // Map NL to CR-NL on output
+        OPOST: 1,     // Enable output processing
+        IEXTEN: 1     // Enable extended input processing
       }
     }, (err, stream) => {
       if (err) {
@@ -68,8 +70,23 @@ class TerminalService {
         sessionId: sessionId
       });
 
+      // Track if we received any data
+      let receivedData = false;
+      let promptTimeout = null;
+
       // Handle output from SSH
       stream.on('data', (data) => {
+        if (!receivedData) {
+          console.log(`Terminal ${terminalId}: First data received (${data.length} bytes)`);
+          receivedData = true;
+        }
+
+        // Clear timeout if we receive data
+        if (promptTimeout) {
+          clearTimeout(promptTimeout);
+          promptTimeout = null;
+        }
+
         try {
           if (ws.readyState === 1) { // WebSocket.OPEN
             ws.send(JSON.stringify({
@@ -87,6 +104,11 @@ class TerminalService {
       // Handle SSH stream close
       stream.on('close', () => {
         console.log(`Terminal ${terminalId} stream closed`);
+
+        if (promptTimeout) {
+          clearTimeout(promptTimeout);
+        }
+
         this.terminals.delete(terminalId);
 
         try {
@@ -110,6 +132,24 @@ class TerminalService {
         action: 'created',
         message: 'Terminal created successfully'
       }));
+
+      console.log(`Terminal ${terminalId} created, waiting for initial prompt...`);
+
+      // Wait for initial prompt, if none received send newline to trigger it
+      promptTimeout = setTimeout(() => {
+        if (!receivedData && stream.writable) {
+          console.log(`Terminal ${terminalId}: No prompt after 1s, sending newline to trigger`);
+          stream.write('\n');
+
+          // If still no response after another second, send another newline
+          setTimeout(() => {
+            if (!receivedData && stream.writable) {
+              console.log(`Terminal ${terminalId}: Still no prompt, sending another newline`);
+              stream.write('\n');
+            }
+          }, 1000);
+        }
+      }, 1000);
     });
   }
 

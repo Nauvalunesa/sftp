@@ -26,33 +26,18 @@ const upload = multer({
 // Apply authentication to all SFTP routes
 router.use(requireAuth);
 
-// Connect to SFTP
-router.post('/connect', async (req, res) => {
+// Get home directory
+router.get('/home', async (req, res) => {
   try {
-    const { host, port, username, password } = req.body;
-
-    if (!host || !username || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Host, username, and password are required'
-      });
-    }
-
-    const connection = await sftpService.connect({
-      host,
-      port: port || 22,
-      username,
-      password
-    });
-
-    req.session.sftpConnected = true;
+    const sessionId = req.session.sshSessionId;
+    const homeDir = await sftpService.getHomeDirectory(sessionId);
 
     res.json({
       success: true,
-      message: 'SFTP connection established'
+      path: homeDir
     });
   } catch (error) {
-    console.error('SFTP connection error:', error);
+    console.error('Get home directory error:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -60,29 +45,18 @@ router.post('/connect', async (req, res) => {
   }
 });
 
-// Disconnect from SFTP
-router.post('/disconnect', async (req, res) => {
-  try {
-    await sftpService.disconnect();
-    req.session.sftpConnected = false;
-
-    res.json({
-      success: true,
-      message: 'SFTP disconnected'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-// List directory contents
+// List directory contents (SFTP auto-connects using existing SSH session)
 router.get('/list', async (req, res) => {
   try {
-    const directory = req.query.path || '/';
-    const files = await sftpService.listDirectory(directory);
+    const sessionId = req.session.sshSessionId;
+    let directory = req.query.path;
+
+    // Get actual directory path (resolves home if needed)
+    if (!directory || directory === '/') {
+      directory = await sftpService.getHomeDirectory(sessionId);
+    }
+
+    const files = await sftpService.listDirectory(sessionId, directory);
 
     res.json({
       success: true,
@@ -98,9 +72,10 @@ router.get('/list', async (req, res) => {
   }
 });
 
-// Download file
-router.get('/download', async (req, res) => {
+// Read file content (for Monaco Editor)
+router.get('/read', async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const filePath = req.query.path;
 
     if (!filePath) {
@@ -110,7 +85,63 @@ router.get('/download', async (req, res) => {
       });
     }
 
-    const fileStream = await sftpService.downloadFile(filePath);
+    const content = await sftpService.readFile(sessionId, filePath);
+
+    res.json({
+      success: true,
+      content
+    });
+  } catch (error) {
+    console.error('Read file error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Write file content (for Monaco Editor)
+router.post('/write', async (req, res) => {
+  try {
+    const sessionId = req.session.sshSessionId;
+    const { path: filePath, content } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        message: 'File path is required'
+      });
+    }
+
+    await sftpService.writeFile(sessionId, filePath, content || '');
+
+    res.json({
+      success: true,
+      message: 'File saved successfully'
+    });
+  } catch (error) {
+    console.error('Write file error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Download file
+router.get('/download', async (req, res) => {
+  try {
+    const sessionId = req.session.sshSessionId;
+    const filePath = req.query.path;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        message: 'File path is required'
+      });
+    }
+
+    const fileStream = await sftpService.downloadFile(sessionId, filePath);
     const fileName = path.basename(filePath);
 
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -127,6 +158,7 @@ router.get('/download', async (req, res) => {
 // Upload file
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const remotePath = req.body.remotePath || '/';
     const localFile = req.file;
 
@@ -138,6 +170,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     await sftpService.uploadFile(
+      sessionId,
       localFile.path,
       path.join(remotePath, localFile.originalname)
     );
@@ -159,6 +192,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 // Create directory
 router.post('/mkdir', async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const { path: dirPath } = req.body;
 
     if (!dirPath) {
@@ -168,7 +202,7 @@ router.post('/mkdir', async (req, res) => {
       });
     }
 
-    await sftpService.createDirectory(dirPath);
+    await sftpService.createDirectory(sessionId, dirPath);
 
     res.json({
       success: true,
@@ -186,6 +220,7 @@ router.post('/mkdir', async (req, res) => {
 // Delete file or directory
 router.delete('/delete', async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const { path: targetPath, isDirectory } = req.body;
 
     if (!targetPath) {
@@ -195,7 +230,7 @@ router.delete('/delete', async (req, res) => {
       });
     }
 
-    await sftpService.delete(targetPath, isDirectory);
+    await sftpService.delete(sessionId, targetPath, isDirectory);
 
     res.json({
       success: true,
@@ -213,6 +248,7 @@ router.delete('/delete', async (req, res) => {
 // Rename file or directory
 router.post('/rename', async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const { oldPath, newPath } = req.body;
 
     if (!oldPath || !newPath) {
@@ -222,7 +258,7 @@ router.post('/rename', async (req, res) => {
       });
     }
 
-    await sftpService.rename(oldPath, newPath);
+    await sftpService.rename(sessionId, oldPath, newPath);
 
     res.json({
       success: true,
@@ -240,6 +276,7 @@ router.post('/rename', async (req, res) => {
 // Get file info
 router.get('/info', async (req, res) => {
   try {
+    const sessionId = req.session.sshSessionId;
     const filePath = req.query.path;
 
     if (!filePath) {
@@ -249,7 +286,7 @@ router.get('/info', async (req, res) => {
       });
     }
 
-    const info = await sftpService.getFileInfo(filePath);
+    const info = await sftpService.getFileInfo(sessionId, filePath);
 
     res.json({
       success: true,

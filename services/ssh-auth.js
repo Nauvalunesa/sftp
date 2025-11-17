@@ -214,6 +214,19 @@ class SSHAuthService {
     const session = this.sessions.get(sessionId);
 
     if (session && session.connection) {
+      // Clean up SFTP sessions
+      const sftpService = require('./sftp');
+      sftpService.closeSFTP(sessionId);
+
+      // Clean up terminal sessions
+      const terminalService = require('./terminal');
+      terminalService.closeSessionTerminals(sessionId);
+
+      // Clean up monitor history
+      const monitorService = require('./monitor');
+      monitorService.cleanupSession(sessionId);
+
+      // Close SSH connection
       session.connection.end();
       this.sessions.delete(sessionId);
       console.log(`SSH session closed: ${sessionId}`);
