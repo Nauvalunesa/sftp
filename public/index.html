@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPS Console Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="auth-screen">
+        <div class="auth-container">
+            <div class="auth-header">
+                <i class="fas fa-server"></i>
+                <h1>VPS Console Manager</h1>
+                <p>Professional VPS Management Dashboard</p>
+            </div>
+            <form id="loginForm" class="auth-form">
+                <div class="form-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="username" placeholder="Username" required>
+                </div>
+                <div class="form-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+                <div id="loginError" class="error-message"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="dashboard" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-server"></i>
+                <h2>VPS Manager</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="overview">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Overview</span>
+                </a>
+                <a href="#" class="nav-item" data-page="terminal">
+                    <i class="fas fa-terminal"></i>
+                    <span>Terminal</span>
+                </a>
+                <a href="#" class="nav-item" data-page="vnc">
+                    <i class="fas fa-desktop"></i>
+                    <span>Remote Desktop</span>
+                </a>
+                <a href="#" class="nav-item" data-page="sftp">
+                    <i class="fas fa-folder"></i>
+                    <span>File Manager</span>
+                </a>
+                <a href="#" class="nav-item" data-page="services">
+                    <i class="fas fa-cogs"></i>
+                    <span>Services</span>
+                </a>
+                <a href="#" class="nav-item" data-page="network">
+                    <i class="fas fa-network-wired"></i>
+                    <span>Network</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="currentUser">Admin</span>
+                </div>
+                <button id="logoutBtn" class="btn btn-logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="content-header">
+                <div class="header-left">
+                    <h1 id="pageTitle">System Overview</h1>
+                </div>
+                <div class="header-right">
+                    <div class="status-indicator">
+                        <div class="status-dot online"></div>
+                        <span>Online</span>
+                    </div>
+                    <button class="btn btn-icon" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Overview Page -->
+            <div id="overviewPage" class="page active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon cpu">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>CPU Usage</h3>
+                            <div class="stat-value" id="cpuUsage">0%</div>
+                            <div class="stat-label">Processing Power</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon memory">
+                            <i class="fas fa-memory"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Memory</h3>
+                            <div class="stat-value" id="memoryUsage">0%</div>
+                            <div class="stat-label" id="memoryDetails">0 GB / 0 GB</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon disk">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Disk Space</h3>
+                            <div class="stat-value" id="diskUsage">0%</div>
+                            <div class="stat-label" id="diskDetails">0 GB / 0 GB</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon uptime">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Uptime</h3>
+                            <div class="stat-value" id="uptime">0d 0h</div>
+                            <div class="stat-label">System Running</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3><i class="fas fa-info-circle"></i> System Information</h3>
+                        <div id="systemInfo" class="info-content"></div>
+                    </div>
+                    <div class="info-card">
+                        <h3><i class="fas fa-chart-area"></i> Load Average</h3>
+                        <div id="loadAverage" class="info-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Page -->
+            <div id="terminalPage" class="page">
+                <div class="terminal-container">
+                    <div class="terminal-header">
+                        <span><i class="fas fa-terminal"></i> Web Terminal</span>
+                        <div class="terminal-controls">
+                            <button class="btn btn-sm" id="clearTerminal">
+                                <i class="fas fa-eraser"></i> Clear
+                            </button>
+                            <button class="btn btn-sm" id="newTerminal">
+                                <i class="fas fa-plus"></i> New
+                            </button>
+                        </div>
+                    </div>
+                    <div id="terminal" class="terminal"></div>
+                </div>
+            </div>
+
+            <!-- VNC Page -->
+            <div id="vncPage" class="page">
+                <div class="vnc-container">
+                    <div class="vnc-header">
+                        <span><i class="fas fa-desktop"></i> Remote Desktop (noVNC)</span>
+                        <div class="vnc-controls">
+                            <button class="btn btn-sm" id="connectVNC">
+                                <i class="fas fa-plug"></i> Connect
+                            </button>
+                            <button class="btn btn-sm" id="disconnectVNC">
+                                <i class="fas fa-times"></i> Disconnect
+                            </button>
+                            <button class="btn btn-sm" id="fullscreenVNC">
+                                <i class="fas fa-expand"></i> Fullscreen
+                            </button>
+                        </div>
+                    </div>
+                    <div id="vncViewer" class="vnc-viewer">
+                        <div class="vnc-placeholder">
+                            <i class="fas fa-desktop"></i>
+                            <p>Click "Connect" to start remote desktop session</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SFTP Page -->
+            <div id="sftpPage" class="page">
+                <div class="sftp-container">
+                    <div class="sftp-header">
+                        <div class="sftp-connection">
+                            <input type="text" id="sftpHost" placeholder="Host" value="localhost">
+                            <input type="number" id="sftpPort" placeholder="Port" value="22">
+                            <input type="text" id="sftpUsername" placeholder="Username">
+                            <input type="password" id="sftpPassword" placeholder="Password">
+                            <button class="btn btn-sm" id="connectSFTP">
+                                <i class="fas fa-plug"></i> Connect
+                            </button>
+                        </div>
+                        <div class="sftp-toolbar">
+                            <button class="btn btn-sm" id="uploadFile">
+                                <i class="fas fa-upload"></i> Upload
+                            </button>
+                            <button class="btn btn-sm" id="createFolder">
+                                <i class="fas fa-folder-plus"></i> New Folder
+                            </button>
+                            <button class="btn btn-sm" id="refreshFiles">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="sftp-path">
+                        <i class="fas fa-folder-open"></i>
+                        <span id="currentPath">/</span>
+                    </div>
+                    <div class="file-manager">
+                        <table class="file-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Size</th>
+                                    <th>Modified</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fileList">
+                                <tr>
+                                    <td colspan="4" class="no-files">Connect to SFTP to view files</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <input type="file" id="fileUploadInput" style="display: none;">
+            </div>
+
+            <!-- Services Page -->
+            <div id="servicesPage" class="page">
+                <div class="services-container">
+                    <h2>Service Management</h2>
+                    <div class="service-control">
+                        <input type="text" id="serviceName" placeholder="Service name (e.g., nginx, apache2)">
+                        <div class="service-buttons">
+                            <button class="btn btn-success" data-action="start">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button class="btn btn-warning" data-action="restart">
+                                <i class="fas fa-redo"></i> Restart
+                            </button>
+                            <button class="btn btn-danger" data-action="stop">
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
+                            <button class="btn btn-info" data-action="status">
+                                <i class="fas fa-info"></i> Status
+                            </button>
+                        </div>
+                    </div>
+                    <div id="serviceOutput" class="service-output"></div>
+                </div>
+            </div>
+
+            <!-- Network Page -->
+            <div id="networkPage" class="page">
+                <div class="network-container">
+                    <h2>Network Interfaces</h2>
+                    <div id="networkInfo" class="network-info"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Scripts -->
+    <script src="/js/app.js"></script>
+</body>
+</html>
