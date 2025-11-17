@@ -86,11 +86,24 @@ class SSHAuthService {
   }
 
   /**
-   * Get session information
+   * Get session information (including connection)
    * @param {string} sessionId - Session ID
-   * @returns {Object|null} Session info
+   * @returns {Object|null} Session info with connection
    */
   getSession(sessionId) {
+    if (!this.isSessionValid(sessionId)) {
+      return null;
+    }
+
+    return this.sessions.get(sessionId);
+  }
+
+  /**
+   * Get session metadata (without connection)
+   * @param {string} sessionId - Session ID
+   * @returns {Object|null} Session metadata
+   */
+  getSessionInfo(sessionId) {
     if (!this.isSessionValid(sessionId)) {
       return null;
     }

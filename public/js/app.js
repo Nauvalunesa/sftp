@@ -35,11 +35,11 @@ async function checkSSHStatus() {
         const response = await fetch('/api/ssh/status');
         const data = await response.json();
 
-        if (data.authenticated) {
+        if (data.authenticated && data.session) {
             state.sshAuthenticated = true;
-            state.sshHost = data.host;
-            state.sshUsername = data.username;
-            state.sshSessionId = data.session ? data.session.sessionId : null;
+            state.sshHost = data.host || data.session.host;
+            state.sshUsername = data.username || data.session.username;
+            state.sshSessionId = data.session.sessionId;
             showDashboard();
             initializeDashboard();
         } else {
@@ -630,7 +630,8 @@ function initTerminal() {
             state.ws.send(JSON.stringify({
                 type: 'terminal',
                 action: 'input',
-                input: data
+                input: data,
+                sessionId: state.sshSessionId
             }));
         }
     });

@@ -111,14 +111,14 @@ app.get('/api/ssh/status', (req, res) => {
   }
 
   const isValid = sshAuthService.isSessionValid(sessionId);
-  const session = sshAuthService.getSession(sessionId);
+  const sessionInfo = sshAuthService.getSessionInfo(sessionId);
 
   res.json({
     success: true,
     authenticated: isValid,
     host: req.session.sshHost,
     username: req.session.sshUsername,
-    session: session || null
+    session: sessionInfo
   });
 });
 
@@ -148,36 +148,21 @@ app.get('/', (req, res) => {
 wss.on('connection', (ws, req) => {
   console.log('New WebSocket connection established');
 
-  // Parse session from cookies
-  let sessionId = null;
-  if (req.headers.cookie) {
-    const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
-      const [key, value] = cookie.trim().split('=');
-      acc[key] = value;
-      return acc;
-    }, {});
-
-    // Extract session ID from cookie (adjust cookie name if needed)
-    const sessionCookie = cookies['connect.sid'];
-    if (sessionCookie) {
-      // Decode session cookie to get sessionId
-      // Session middleware stores it in format: s:{sessionId}.{signature}
-      const decodedCookie = decodeURIComponent(sessionCookie);
-      const match = decodedCookie.match(/^s:([^.]+)\./);
-      if (match) {
-        sessionId = match[1];
-      }
-    }
-  }
-
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
 
       if (data.type === 'terminal') {
-        // Pass sessionId from data or from cookie
-        const sshSessionId = data.sessionId || sessionId;
-        terminalHandler.handleTerminal(ws, data, sshSessionId);
+        // sessionId must be sent from client
+        if (!data.sessionId) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'SSH session ID required'
+          }));
+          return;
+        }
+
+        terminalHandler.handleTerminal(ws, data, data.sessionId);
       }
     } catch (error) {
       console.error('WebSocket message error:', error);
