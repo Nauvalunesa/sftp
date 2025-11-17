@@ -26,11 +26,36 @@ const upload = multer({
 // Apply authentication to all SFTP routes
 router.use(requireAuth);
 
+// Get home directory
+router.get('/home', async (req, res) => {
+  try {
+    const sessionId = req.session.sshSessionId;
+    const homeDir = await sftpService.getHomeDirectory(sessionId);
+
+    res.json({
+      success: true,
+      path: homeDir
+    });
+  } catch (error) {
+    console.error('Get home directory error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // List directory contents (SFTP auto-connects using existing SSH session)
 router.get('/list', async (req, res) => {
   try {
     const sessionId = req.session.sshSessionId;
-    const directory = req.query.path || '/';
+    let directory = req.query.path;
+
+    // Get actual directory path (resolves home if needed)
+    if (!directory || directory === '/') {
+      directory = await sftpService.getHomeDirectory(sessionId);
+    }
+
     const files = await sftpService.listDirectory(sessionId, directory);
 
     res.json({

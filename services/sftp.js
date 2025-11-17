@@ -46,8 +46,45 @@ class SFTPService {
     }
   }
 
+  // Get home directory for session
+  async getHomeDirectory(sessionId) {
+    const session = sshAuthService.getSession(sessionId);
+    if (!session || !session.connection) {
+      throw new Error('Invalid or expired SSH session');
+    }
+
+    return new Promise((resolve, reject) => {
+      session.connection.exec('pwd', (err, stream) => {
+        if (err) {
+          // Fallback to /root or /home/username
+          resolve('/root');
+          return;
+        }
+
+        let output = '';
+        stream.on('data', (data) => {
+          output += data.toString();
+        });
+
+        stream.on('close', () => {
+          const homeDir = output.trim() || '/root';
+          resolve(homeDir);
+        });
+
+        stream.on('error', () => {
+          resolve('/root');
+        });
+      });
+    });
+  }
+
   async listDirectory(sessionId, directory) {
     const sftp = await this.getSFTP(sessionId);
+
+    // If no directory specified, use home directory
+    if (!directory || directory === '/') {
+      directory = await this.getHomeDirectory(sessionId);
+    }
 
     return new Promise((resolve, reject) => {
       sftp.readdir(directory, (err, list) => {
