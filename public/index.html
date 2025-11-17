@@ -6,27 +6,39 @@
     <title>VPS Console Manager</title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Monaco Editor -->
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
 </head>
 <body>
-    <!-- Login Screen -->
+    <!-- SSH Login Screen -->
     <div id="loginScreen" class="auth-screen">
         <div class="auth-container">
             <div class="auth-header">
-                <i class="fas fa-server"></i>
+                <i class="fas fa-terminal"></i>
                 <h1>VPS Console Manager</h1>
-                <p>Professional VPS Management Dashboard</p>
+                <p>SSH Authentication - Secure Access to Your VPS</p>
             </div>
-            <form id="loginForm" class="auth-form">
+            <form id="sshLoginForm" class="auth-form">
+                <div class="form-row-inline">
+                    <div class="form-group">
+                        <i class="fas fa-server"></i>
+                        <input type="text" id="loginSshHost" placeholder="SSH Host" value="localhost" required>
+                    </div>
+                    <div class="form-group" style="max-width: 120px;">
+                        <i class="fas fa-hashtag"></i>
+                        <input type="number" id="loginSshPort" placeholder="Port" value="22" required>
+                    </div>
+                </div>
                 <div class="form-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="username" placeholder="Username" required>
+                    <input type="text" id="loginSshUsername" placeholder="SSH Username" required>
                 </div>
                 <div class="form-group">
                     <i class="fas fa-lock"></i>
-                    <input type="password" id="password" placeholder="Password" required>
+                    <input type="password" id="loginSshPassword" placeholder="SSH Password" required>
                 </div>
                 <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-sign-in-alt"></i> Login
+                    <i class="fas fa-sign-in-alt"></i> Connect via SSH
                 </button>
                 <div id="loginError" class="error-message"></div>
             </form>
@@ -69,12 +81,15 @@
             </nav>
             <div class="sidebar-footer">
                 <div class="user-info">
-                    <i class="fas fa-user-circle"></i>
-                    <span id="currentUser">Admin</span>
+                    <i class="fas fa-server"></i>
+                    <div class="user-details">
+                        <span id="currentUser" class="username">user@host</span>
+                        <small id="sshConnectionInfo" class="connection-info">SSH Connected</small>
+                    </div>
                 </div>
                 <button id="logoutBtn" class="btn btn-logout">
                     <i class="fas fa-sign-out-alt"></i>
-                    Logout
+                    Disconnect
                 </button>
             </div>
         </aside>
@@ -235,50 +250,52 @@
             <div id="sftpPage" class="page">
                 <div class="sftp-container">
                     <div class="sftp-header">
-                        <div class="sftp-connection">
-                            <input type="text" id="sftpHost" placeholder="Host" value="localhost">
-                            <input type="number" id="sftpPort" placeholder="Port" value="22">
-                            <input type="text" id="sftpUsername" placeholder="Username">
-                            <input type="password" id="sftpPassword" placeholder="Password">
-                            <button class="btn btn-sm" id="connectSFTP">
-                                <i class="fas fa-plug"></i> Connect
+                        <div class="sftp-path-bar">
+                            <button class="btn btn-sm" id="goParentDir" title="Parent Directory">
+                                <i class="fas fa-level-up-alt"></i>
                             </button>
+                            <div class="current-path">
+                                <i class="fas fa-folder-open"></i>
+                                <span id="currentPath">/</span>
+                            </div>
                         </div>
                         <div class="sftp-toolbar">
+                            <button class="btn btn-sm btn-primary" id="createNewFile">
+                                <i class="fas fa-file-plus"></i> New File
+                            </button>
+                            <button class="btn btn-sm btn-primary" id="createFolder">
+                                <i class="fas fa-folder-plus"></i> New Folder
+                            </button>
                             <button class="btn btn-sm" id="uploadFile">
                                 <i class="fas fa-upload"></i> Upload
-                            </button>
-                            <button class="btn btn-sm" id="createFolder">
-                                <i class="fas fa-folder-plus"></i> New Folder
                             </button>
                             <button class="btn btn-sm" id="refreshFiles">
                                 <i class="fas fa-sync"></i> Refresh
                             </button>
                         </div>
                     </div>
-                    <div class="sftp-path">
-                        <i class="fas fa-folder-open"></i>
-                        <span id="currentPath">/</span>
-                    </div>
                     <div class="file-manager">
                         <table class="file-table">
                             <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Size</th>
-                                    <th>Modified</th>
-                                    <th>Actions</th>
+                                    <th style="width: 50%;">Name</th>
+                                    <th style="width: 15%;">Size</th>
+                                    <th style="width: 20%;">Modified</th>
+                                    <th style="width: 15%;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="fileList">
                                 <tr>
-                                    <td colspan="4" class="no-files">Connect to SFTP to view files</td>
+                                    <td colspan="4" class="no-files">
+                                        <i class="fas fa-folder-open"></i>
+                                        <p>Loading files...</p>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
-                <input type="file" id="fileUploadInput" style="display: none;">
+                <input type="file" id="fileUploadInput" style="display: none;" multiple>
             </div>
 
             <!-- Services Page -->
@@ -319,7 +336,70 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast"></div>
 
+    <!-- File Editor Modal -->
+    <div id="fileEditorModal" class="modal">
+        <div class="modal-content editor-modal">
+            <div class="modal-header">
+                <div class="editor-title">
+                    <i class="fas fa-file-code"></i>
+                    <span id="editorFileName">Editing: file.txt</span>
+                </div>
+                <div class="editor-actions">
+                    <button class="btn btn-sm btn-success" id="saveFileBtn">
+                        <i class="fas fa-save"></i> Save
+                    </button>
+                    <button class="btn btn-sm" id="closeEditorBtn">
+                        <i class="fas fa-times"></i> Close
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="monacoEditor" class="monaco-editor-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move File Modal -->
+    <div id="moveFileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-arrows-alt"></i> Move/Copy File</h3>
+                <button class="btn-close" id="closeMoveModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Source:</label>
+                    <input type="text" id="moveSourcePath" readonly class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Destination Path:</label>
+                    <input type="text" id="moveDestPath" class="form-control" placeholder="/path/to/destination">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="copyFileCheckbox">
+                        Copy instead of move
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="confirmMoveBtn">
+                    <i class="fas fa-check"></i> Confirm
+                </button>
+                <button class="btn btn-secondary" id="cancelMoveBtn">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
+    <script>
+        var require = { paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.nls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

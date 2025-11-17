@@ -965,3 +965,254 @@ body {
         padding: 20px;
     }
 }
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    animation: fadeIn 0.3s;
+}
+
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    border-radius: 15px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp 0.3s;
+}
+
+.editor-modal {
+    max-width: 95%;
+    max-height: 95vh;
+    width: 95%;
+    height: 95vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    color: var(--primary-color);
+}
+
+.editor-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    cursor: pointer;
+    transition: color 0.3s;
+}
+
+.btn-close:hover {
+    color: var(--danger-color);
+}
+
+.modal-body {
+    padding: 20px;
+    flex: 1;
+    overflow: auto;
+}
+
+.editor-modal .modal-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* Monaco Editor Container */
+.monaco-editor-container {
+    width: 100%;
+    height: 100%;
+    min-height: 500px;
+}
+
+/* Form Updates */
+.form-row-inline {
+    display: flex;
+    gap: 10px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px;
+    background: var(--darker-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* Updated Sidebar User Info */
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.username {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.connection-info {
+    font-size: 11px;
+    color: var(--success-color);
+}
+
+/* Updated SFTP Styles */
+.sftp-path-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.current-path {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--darker-bg);
+    padding: 10px 15px;
+    border-radius: 8px;
+    flex: 1;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.sftp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: var(--darker-bg);
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.btn-secondary {
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background: var(--border-color);
+}
+
+/* File Actions Buttons */
+.file-actions button {
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.file-actions .btn-edit {
+    background: var(--info-color);
+    color: white;
+}
+
+.file-actions .btn-move {
+    background: var(--warning-color);
+    color: white;
+}
+
+/* Improved file table */
+.file-table {
+    font-size: 14px;
+}
+
+.file-table tbody tr {
+    cursor: pointer;
+}
+
+.file-table .file-icon {
+    font-size: 18px;
+    margin-right: 8px;
+}
+
+.file-table .file-icon.folder {
+    color: #f59e0b;
+}
+
+.file-table .file-icon.file {
+    color: #6b7280;
+}
+
+/* Loading Spinner */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading {
+    animation: spin 1s linear infinite;
+}
+
+/* Enhanced No Files Message */
+.no-files {
+    text-align: center !important;
+    padding: 60px 20px !important;
+}
+
+.no-files i {
+    font-size: 48px;
+    opacity: 0.3;
+    display: block;
+    margin-bottom: 15px;
+}
+
+.no-files p {
+    margin: 0;
+    color: var(--text-secondary);
+}
