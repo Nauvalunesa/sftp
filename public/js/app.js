@@ -9,6 +9,8 @@ const state = {
     sshUsername: null,
     ws: null,
     terminal: null,
+    terminalFontSize: 14,
+    terminalFullscreen: false,
     currentPath: '/',
     currentFile: null,
     monacoEditor: null,
@@ -93,12 +95,56 @@ function setupEventListeners() {
         });
     }
 
-    const newTerminal = document.getElementById('newTerminal');
-    if (newTerminal) {
-        newTerminal.addEventListener('click', () => {
+    const reconnectTerminal = document.getElementById('reconnectTerminal');
+    if (reconnectTerminal) {
+        reconnectTerminal.addEventListener('click', () => {
             if (state.terminal) {
                 state.terminal.clear();
                 createTerminal();
+                updateTerminalStatus('Reconnecting...', false);
+            }
+        });
+    }
+
+    // Font size controls
+    const fontIncreaseBtn = document.getElementById('fontIncreaseBtn');
+    if (fontIncreaseBtn) {
+        fontIncreaseBtn.addEventListener('click', () => {
+            if (state.terminal && state.terminalFontSize < 24) {
+                state.terminalFontSize += 2;
+                state.terminal.options.fontSize = state.terminalFontSize;
+                updateFontSizeDisplay();
+                fitTerminal();
+            }
+        });
+    }
+
+    const fontDecreaseBtn = document.getElementById('fontDecreaseBtn');
+    if (fontDecreaseBtn) {
+        fontDecreaseBtn.addEventListener('click', () => {
+            if (state.terminal && state.terminalFontSize > 10) {
+                state.terminalFontSize -= 2;
+                state.terminal.options.fontSize = state.terminalFontSize;
+                updateFontSizeDisplay();
+                fitTerminal();
+            }
+        });
+    }
+
+    // Fullscreen toggle
+    const fullscreenTerminal = document.getElementById('fullscreenTerminal');
+    if (fullscreenTerminal) {
+        fullscreenTerminal.addEventListener('click', () => {
+            toggleFullscreen();
+        });
+    }
+
+    // Copy mode info
+    const copyModeBtn = document.getElementById('copyModeBtn');
+    if (copyModeBtn) {
+        copyModeBtn.addEventListener('click', () => {
+            if (state.terminal) {
+                state.terminal.write('\r\n\x1b[1;33m[Copy Mode]\x1b[0m Select text with mouse, then press Ctrl+C or Cmd+C to copy\r\n');
             }
         });
     }
@@ -317,13 +363,24 @@ function navigateToPage(pageName) {
         pageTitle.textContent = titles[pageName];
     }
 
+    // Stop monitoring when switching away from monitor page
+    if (pageName !== 'monitor' && state.monitoringInterval) {
+        console.log('Stopping monitoring interval');
+        clearInterval(state.monitoringInterval);
+        state.monitoringInterval = null;
+    }
+
     // Initialize page-specific features
     if (pageName === 'monitor') {
         initMonitoring();
-    } else if (pageName === 'terminal' && !state.terminal) {
-        initTerminal();
+    } else if (pageName === 'terminal') {
+        if (!state.terminal) {
+            console.log('Initializing terminal...');
+            initTerminal();
+        }
     } else if (pageName === 'sftp') {
-        connectSFTP();
+        console.log('Loading file list...');
+        loadFileList();
     }
 }
 
@@ -344,13 +401,14 @@ function initMonitoring() {
         initializeCharts();
     }
 
-    // Start monitoring updates
+    // Start monitoring updates with 5 second interval (reduced load)
     if (state.monitoringInterval) {
         clearInterval(state.monitoringInterval);
     }
 
     fetchMonitoringData();
-    state.monitoringInterval = setInterval(fetchMonitoringData, 2000);
+    state.monitoringInterval = setInterval(fetchMonitoringData, 5000); // Changed from 2000 to 5000
+    console.log('Monitoring started with 5s interval');
 }
 
 function initializeCharts() {
@@ -625,22 +683,46 @@ function initTerminal() {
     const terminalDiv = document.getElementById('terminal');
     if (!terminalDiv) return;
 
-    // Initialize xterm.js terminal
+    // Initialize xterm.js terminal with Proxmox-like theme
     state.terminal = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
+        fontSize: state.terminalFontSize,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         theme: {
-            background: '#1e293b',
-            foreground: '#f1f5f9',
-            cursor: '#3b82f6',
-            selection: 'rgba(59, 130, 246, 0.3)'
+            background: '#000000',
+            foreground: '#ffffff',
+            cursor: '#00ff00',
+            cursorAccent: '#000000',
+            selection: 'rgba(255, 255, 255, 0.3)',
+            black: '#000000',
+            red: '#ff0000',
+            green: '#00ff00',
+            yellow: '#ffff00',
+            blue: '#0000ff',
+            magenta: '#ff00ff',
+            cyan: '#00ffff',
+            white: '#ffffff',
+            brightBlack: '#808080',
+            brightRed: '#ff8080',
+            brightGreen: '#80ff80',
+            brightYellow: '#ffff80',
+            brightBlue: '#8080ff',
+            brightMagenta: '#ff80ff',
+            brightCyan: '#80ffff',
+            brightWhite: '#ffffff'
         },
-        cols: 80,
-        rows: 24
+        scrollback: 10000,
+        allowTransparency: false,
+        convertEol: true
     });
 
     state.terminal.open(terminalDiv);
+
+    // Fit terminal to container
+    fitTerminal();
+
+    // Update session info
+    updateTerminalSessionInfo();
 
     // Create terminal session
     createTerminal();
@@ -655,6 +737,11 @@ function initTerminal() {
                 sessionId: state.sshSessionId
             }));
         }
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        fitTerminal();
     });
 }
 
@@ -679,7 +766,11 @@ function connectWebSocket() {
     state.ws = new WebSocket(wsUrl);
 
     state.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
+        // Update terminal status if terminal exists
+        if (state.terminal) {
+            updateTerminalStatus('Connected', true);
+        }
     };
 
     state.ws.onmessage = (event) => {
@@ -699,10 +790,15 @@ function connectWebSocket() {
     };
 
     state.ws.onclose = () => {
-        console.log('WebSocket closed');
+        console.log('WebSocket closed, will attempt reconnect in 3s');
+        // Update terminal status
+        if (state.terminal) {
+            updateTerminalStatus('Disconnected', false);
+        }
         // Attempt to reconnect after 3 seconds
         setTimeout(() => {
             if (state.sshAuthenticated) {
+                console.log('Reconnecting WebSocket...');
                 connectWebSocket();
             }
         }, 3000);
@@ -714,12 +810,103 @@ function handleTerminalMessage(data) {
         state.terminal.write(data.data);
     } else if (data.action === 'created') {
         console.log('Terminal created');
+        updateTerminalStatus('Connected', true);
     } else if (data.action === 'exit') {
         console.log('Terminal exited');
+        updateTerminalStatus('Disconnected', false);
         if (state.terminal) {
-            state.terminal.write('\r\n\r\nTerminal session ended. Click "New" to create a new session.\r\n');
+            state.terminal.write('\r\n\r\n\x1b[1;31mTerminal session ended.\x1b[0m Click reconnect to start a new session.\r\n');
+        }
+    } else if (data.action === 'error') {
+        console.error('Terminal error:', data.message);
+        updateTerminalStatus('Error', false);
+        if (state.terminal) {
+            state.terminal.write(`\r\n\x1b[1;31mError: ${data.message}\x1b[0m\r\n`);
         }
     }
+}
+
+// Terminal helper functions
+function fitTerminal() {
+    if (!state.terminal) return;
+
+    const terminalDiv = document.getElementById('terminal');
+    if (!terminalDiv) return;
+
+    const dimensions = {
+        cols: Math.floor(terminalDiv.clientWidth / (state.terminalFontSize * 0.6)),
+        rows: Math.floor(terminalDiv.clientHeight / (state.terminalFontSize * 1.5))
+    };
+
+    if (dimensions.cols > 0 && dimensions.rows > 0) {
+        state.terminal.resize(dimensions.cols, dimensions.rows);
+
+        // Send resize to backend
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({
+                type: 'terminal',
+                action: 'resize',
+                cols: dimensions.cols,
+                rows: dimensions.rows,
+                sessionId: state.sshSessionId
+            }));
+        }
+    }
+}
+
+function updateTerminalStatus(status, isConnected) {
+    const statusElement = document.getElementById('terminalStatus');
+    const statusDot = document.getElementById('terminalStatusDot');
+
+    if (statusElement) {
+        statusElement.textContent = status;
+    }
+
+    if (statusDot) {
+        if (isConnected) {
+            statusDot.classList.add('connected');
+        } else {
+            statusDot.classList.remove('connected');
+        }
+    }
+}
+
+function updateTerminalSessionInfo() {
+    const sessionInfo = document.getElementById('terminalSessionInfo');
+    if (sessionInfo && state.sshHost && state.sshUsername) {
+        sessionInfo.textContent = `${state.sshUsername}@${state.sshHost}`;
+    }
+}
+
+function updateFontSizeDisplay() {
+    const fontSizeElement = document.getElementById('terminalFontSize');
+    if (fontSizeElement) {
+        fontSizeElement.textContent = `Font: ${state.terminalFontSize}px`;
+    }
+}
+
+function toggleFullscreen() {
+    const container = document.querySelector('.terminal-container');
+    const icon = document.querySelector('#fullscreenTerminal i');
+
+    if (!container || !icon) return;
+
+    state.terminalFullscreen = !state.terminalFullscreen;
+
+    if (state.terminalFullscreen) {
+        container.classList.add('fullscreen');
+        icon.classList.remove('fa-expand');
+        icon.classList.add('fa-compress');
+    } else {
+        container.classList.remove('fullscreen');
+        icon.classList.remove('fa-compress');
+        icon.classList.add('fa-expand');
+    }
+
+    // Refit terminal after fullscreen toggle
+    setTimeout(() => {
+        fitTerminal();
+    }, 100);
 }
 
 // ================================
@@ -756,17 +943,54 @@ async function loadFileList(path = null) {
         state.currentPath = path;
     }
 
+    // Get home directory first if current path is /
+    if (!path && state.currentPath === '/') {
+        try {
+            console.log('Getting home directory...');
+            const homeResponse = await fetch('/api/sftp/home');
+            const homeData = await homeResponse.json();
+            if (homeData.success) {
+                state.currentPath = homeData.path;
+                console.log('Home directory:', state.currentPath);
+            }
+        } catch (error) {
+            console.error('Failed to get home directory:', error);
+        }
+    }
+
     try {
+        console.log('Loading file list for path:', state.currentPath);
         const response = await fetch(`/api/sftp/list?path=${encodeURIComponent(state.currentPath)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
 
         if (data.success) {
+            console.log(`Loaded ${data.files?.length || 0} files`);
+            state.currentPath = data.path || state.currentPath; // Update with actual path from server
             displayFileList(data.files);
             document.getElementById('currentPath').textContent = state.currentPath;
+        } else {
+            console.error('SFTP list failed:', data.message);
+            showError('Failed to load file list: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('File list error:', error);
+        showError('Failed to load file list: ' + error.message);
     }
+}
+
+function showError(message) {
+    // Simple error notification
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-notification';
+    errorDiv.textContent = message;
+    errorDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:#ef4444;color:white;padding:15px 20px;border-radius:8px;z-index:10000;';
+    document.body.appendChild(errorDiv);
+    setTimeout(() => errorDiv.remove(), 5000);
 }
 
 function displayFileList(files) {

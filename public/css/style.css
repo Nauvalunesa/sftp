@@ -483,47 +483,132 @@ body {
     border-bottom: none;
 }
 
-/* Terminal */
+/* Terminal - Proxmox/Pterodactyl Style */
 .terminal-container {
     background: var(--card-bg);
-    border-radius: 15px;
+    border-radius: 12px;
     overflow: hidden;
     box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 180px);
+    position: relative;
+}
+
+.terminal-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    border-radius: 0;
+    height: 100vh;
 }
 
 .terminal-header {
-    background: var(--darker-bg);
-    padding: 15px 20px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    padding: 12px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+    flex-shrink: 0;
+}
+
+.terminal-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.terminal-session-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: rgba(59, 130, 246, 0.1);
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin-left: 10px;
 }
 
 .terminal-controls {
     display: flex;
-    gap: 10px;
+    gap: 8px;
 }
 
 .btn-sm {
     padding: 8px 15px;
     font-size: 14px;
-    background: var(--card-bg);
+    background: rgba(59, 130, 246, 0.1);
     color: var(--text-primary);
+    border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .btn-sm:hover {
     background: var(--primary-color);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+.btn-icon {
+    padding: 8px 12px;
+    min-width: unset;
+}
+
+.terminal-status-bar {
+    background: #0a0f1a;
+    padding: 8px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.terminal-status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-status-dot {
+    font-size: 8px;
+    color: #ef4444;
+    animation: pulse 2s infinite;
+}
+
+.terminal-status-dot.connected {
+    color: #22c55e;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .terminal {
-    height: 600px;
-    background: #000;
-    padding: 20px;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    color: #0f0;
-    overflow-y: auto;
+    flex: 1;
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* XTerm.js overrides for Proxmox style */
+.terminal .xterm {
+    height: 100% !important;
+    padding: 10px;
+}
+
+.terminal .xterm-viewport {
+    background-color: #000000 !important;
+}
+
+.terminal .xterm-screen {
+    background-color: #000000 !important;
 }
 
 /* VNC */

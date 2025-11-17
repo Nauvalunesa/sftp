@@ -209,15 +209,38 @@
             <div id="terminalPage" class="page">
                 <div class="terminal-container">
                     <div class="terminal-header">
-                        <span><i class="fas fa-terminal"></i> Web Terminal</span>
+                        <div class="terminal-title">
+                            <i class="fas fa-terminal"></i>
+                            <span>Console</span>
+                            <span class="terminal-session-info" id="terminalSessionInfo"></span>
+                        </div>
                         <div class="terminal-controls">
-                            <button class="btn btn-sm" id="clearTerminal">
-                                <i class="fas fa-eraser"></i> Clear
+                            <button class="btn btn-sm btn-icon" id="fontDecreaseBtn" title="Decrease Font Size">
+                                <i class="fas fa-search-minus"></i>
                             </button>
-                            <button class="btn btn-sm" id="newTerminal">
-                                <i class="fas fa-plus"></i> New
+                            <button class="btn btn-sm btn-icon" id="fontIncreaseBtn" title="Increase Font Size">
+                                <i class="fas fa-search-plus"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" id="clearTerminal" title="Clear Terminal">
+                                <i class="fas fa-eraser"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" id="copyModeBtn" title="Copy Mode (Select text to copy)">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" id="reconnectTerminal" title="Reconnect">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-icon" id="fullscreenTerminal" title="Toggle Fullscreen">
+                                <i class="fas fa-expand"></i>
                             </button>
                         </div>
+                    </div>
+                    <div class="terminal-status-bar">
+                        <span class="terminal-status-item">
+                            <i class="fas fa-circle terminal-status-dot" id="terminalStatusDot"></i>
+                            <span id="terminalStatus">Disconnected</span>
+                        </span>
+                        <span class="terminal-status-item" id="terminalFontSize">Font: 14px</span>
                     </div>
                     <div id="terminal" class="terminal"></div>
                 </div>
