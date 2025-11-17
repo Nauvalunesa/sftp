@@ -28,7 +28,7 @@ module.exports = {
 
     // Server Monitoring Settings
     monitoring: {
-        updateInterval: 2000, // Update every 2 seconds
+        updateInterval: 5000, // Update every 5 seconds (reduced to prevent SSH channel exhaustion)
         historyLimit: 60 // Keep last 60 data points for graphs
     }
 };
