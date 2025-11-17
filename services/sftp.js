@@ -54,24 +54,45 @@ class SFTPService {
     }
 
     return new Promise((resolve, reject) => {
-      session.connection.exec('pwd', (err, stream) => {
+      // Use echo $HOME which is more reliable than pwd
+      session.connection.exec('echo $HOME', (err, stream) => {
         if (err) {
-          // Fallback to /root or /home/username
+          console.error('Failed to get home directory:', err);
+          // Fallback to /root
           resolve('/root');
           return;
         }
 
         let output = '';
+        let errorOutput = '';
+
         stream.on('data', (data) => {
           output += data.toString();
         });
 
-        stream.on('close', () => {
-          const homeDir = output.trim() || '/root';
-          resolve(homeDir);
+        stream.stderr.on('data', (data) => {
+          errorOutput += data.toString();
         });
 
-        stream.on('error', () => {
+        stream.on('close', (code) => {
+          if (code !== 0 || errorOutput) {
+            console.error('Home directory command failed:', errorOutput);
+            resolve('/root');
+            return;
+          }
+
+          const homeDir = output.trim();
+          if (homeDir && homeDir.startsWith('/')) {
+            console.log('Home directory detected:', homeDir);
+            resolve(homeDir);
+          } else {
+            console.log('Invalid home directory, using /root');
+            resolve('/root');
+          }
+        });
+
+        stream.on('error', (error) => {
+          console.error('Home directory stream error:', error);
           resolve('/root');
         });
       });
@@ -80,11 +101,6 @@ class SFTPService {
 
   async listDirectory(sessionId, directory) {
     const sftp = await this.getSFTP(sessionId);
-
-    // If no directory specified, use home directory
-    if (!directory || directory === '/') {
-      directory = await this.getHomeDirectory(sessionId);
-    }
 
     return new Promise((resolve, reject) => {
       sftp.readdir(directory, (err, list) => {

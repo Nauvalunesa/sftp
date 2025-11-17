@@ -76,7 +76,10 @@ class TerminalService {
 
       // Handle output from SSH
       stream.on('data', (data) => {
-        receivedData = true;
+        if (!receivedData) {
+          console.log(`Terminal ${terminalId}: First data received (${data.length} bytes)`);
+          receivedData = true;
+        }
 
         // Clear timeout if we receive data
         if (promptTimeout) {
@@ -130,13 +133,23 @@ class TerminalService {
         message: 'Terminal created successfully'
       }));
 
-      // Wait a bit for initial prompt, if none received send newline to trigger it
+      console.log(`Terminal ${terminalId} created, waiting for initial prompt...`);
+
+      // Wait for initial prompt, if none received send newline to trigger it
       promptTimeout = setTimeout(() => {
         if (!receivedData && stream.writable) {
-          console.log('No initial prompt received, sending newline to trigger prompt');
+          console.log(`Terminal ${terminalId}: No prompt after 1s, sending newline to trigger`);
           stream.write('\n');
+
+          // If still no response after another second, send another newline
+          setTimeout(() => {
+            if (!receivedData && stream.writable) {
+              console.log(`Terminal ${terminalId}: Still no prompt, sending another newline`);
+              stream.write('\n');
+            }
+          }, 1000);
         }
-      }, 500);
+      }, 1000);
     });
   }
 
