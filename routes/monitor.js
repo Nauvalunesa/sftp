@@ -35,6 +35,14 @@ router.use(requireSSHAuth);
 router.get('/stats', async (req, res) => {
   try {
     const stats = await monitorService.getAllStats(req.sshConnection, req.sshSessionId);
+
+    // Add CPU info to stats
+    if (stats.system && stats.cpu) {
+      stats.cpu.cores = stats.system.cpuCount;
+      stats.cpu.model = stats.system.cpuModel;
+      stats.cpu.loadAverage = stats.system.loadAverage;
+    }
+
     res.json({
       success: true,
       data: stats
