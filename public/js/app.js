@@ -177,6 +177,7 @@ function setupEventListeners() {
 
 async function handleSSHLogin(e) {
     e.preventDefault();
+    console.log('SSH Login form submitted');
 
     const host = document.getElementById('loginSshHost').value;
     const port = document.getElementById('loginSshPort').value;
@@ -184,10 +185,21 @@ async function handleSSHLogin(e) {
     const password = document.getElementById('loginSshPassword').value;
     const errorDiv = document.getElementById('loginError');
 
+    console.log('Login details:', { host, port, username, password: '***' });
+
+    // Clear previous errors
     errorDiv.textContent = '';
     errorDiv.style.display = 'none';
 
+    // Show loading state
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
+
     try {
+        console.log('Sending login request to /api/ssh/auth');
+
         const response = await fetch('/api/ssh/auth', {
             method: 'POST',
             headers: {
@@ -196,23 +208,32 @@ async function handleSSHLogin(e) {
             body: JSON.stringify({ host, port, username, password })
         });
 
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
 
         if (data.success) {
+            console.log('Login successful!');
             state.sshAuthenticated = true;
             state.sshHost = host;
             state.sshUsername = username;
-            state.sshSessionId = data.sessionId;  // Store SSH session ID
+            state.sshSessionId = data.sessionId;
+
             showDashboard();
             initializeDashboard();
         } else {
+            console.error('Login failed:', data.message);
             errorDiv.textContent = data.message || 'SSH authentication failed';
             errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
     } catch (error) {
         console.error('SSH login error:', error);
-        errorDiv.textContent = 'Connection failed. Please check your credentials and try again.';
+        errorDiv.textContent = 'Connection failed: ' + error.message;
         errorDiv.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
     }
 }
 

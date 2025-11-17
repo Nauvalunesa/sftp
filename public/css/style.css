@@ -177,6 +177,16 @@ body {
     font-size: 14px;
     text-align: center;
     min-height: 20px;
+    margin-top: 15px;
+    padding: 10px;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: 6px;
+    border: 1px solid var(--danger-color);
+    display: none;
+}
+
+.error-message:empty {
+    display: none !important;
 }
 
 /* Dashboard Layout */
