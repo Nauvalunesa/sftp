@@ -4,11 +4,12 @@ const { requireAuth } = require('../middleware/auth');
 const sftpService = require('../services/sftp');
 const multer = require('multer');
 const path = require('path');
+const config = require('../config');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, process.env.UPLOAD_DIR || './uploads');
+    cb(null, config.upload.uploadDir);
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname);
@@ -18,7 +19,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 100 * 1024 * 1024 // 100MB default
+    fileSize: config.upload.maxFileSize
   }
 });
 
@@ -30,9 +31,16 @@ router.post('/connect', async (req, res) => {
   try {
     const { host, port, username, password } = req.body;
 
+    if (!host || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Host, username, and password are required'
+      });
+    }
+
     const connection = await sftpService.connect({
-      host: host || process.env.SSH_HOST || 'localhost',
-      port: port || process.env.SSH_PORT || 22,
+      host,
+      port: port || 22,
       username,
       password
     });

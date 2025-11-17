@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
@@ -10,12 +9,15 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 
+// Import configuration
+const config = require('./config');
+
 // Import routes
-const authRoutes = require('./routes/auth');
 const sftpRoutes = require('./routes/sftp');
-const vncRoutes = require('./routes/vnc');
+const monitorRoutes = require('./routes/monitor');
 const systemRoutes = require('./routes/system');
 const terminalHandler = require('./services/terminal');
+const sshAuthService = require('./services/ssh-auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -33,20 +35,20 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX || 100),
+  windowMs: config.security.rateLimitWindow * 60 * 1000,
+  max: config.security.rateLimitMax,
   message: 'Too many requests from this IP'
 });
 app.use('/api/', limiter);
 
 // Session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'change-this-secret',
+  secret: config.session.secret,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    secure: config.server.nodeEnv === 'production',
+    maxAge: config.session.maxAge
   }
 }));
 
@@ -54,10 +56,88 @@ app.use(session({
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
-app.use('/api/auth', authRoutes);
 app.use('/api/sftp', sftpRoutes);
-app.use('/api/vnc', vncRoutes);
+app.use('/api/monitor', monitorRoutes);
 app.use('/api/system', systemRoutes);
+
+// SSH Authentication endpoint
+app.post('/api/ssh/auth', async (req, res) => {
+  try {
+    const { host, port, username, password } = req.body;
+
+    if (!host || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Host, username, and password are required'
+      });
+    }
+
+    const result = await sshAuthService.authenticate({
+      host,
+      port: port || 22,
+      username,
+      password
+    });
+
+    req.session.sshSessionId = result.sessionId;
+    req.session.sshHost = host;
+    req.session.sshUsername = username;
+
+    res.json({
+      success: true,
+      message: 'SSH authentication successful',
+      sessionId: result.sessionId,
+      user: result.user,
+      host: result.host
+    });
+  } catch (error) {
+    console.error('SSH auth error:', error);
+    res.status(401).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// SSH session status
+app.get('/api/ssh/status', (req, res) => {
+  const sessionId = req.session.sshSessionId;
+
+  if (!sessionId) {
+    return res.json({
+      success: true,
+      authenticated: false
+    });
+  }
+
+  const isValid = sshAuthService.isSessionValid(sessionId);
+  const session = sshAuthService.getSession(sessionId);
+
+  res.json({
+    success: true,
+    authenticated: isValid,
+    host: req.session.sshHost,
+    username: req.session.sshUsername,
+    session: session || null
+  });
+});
+
+// SSH disconnect
+app.post('/api/ssh/disconnect', (req, res) => {
+  const sessionId = req.session.sshSessionId;
+
+  if (sessionId) {
+    sshAuthService.closeSession(sessionId);
+    delete req.session.sshSessionId;
+    delete req.session.sshHost;
+    delete req.session.sshUsername;
+  }
+
+  res.json({
+    success: true,
+    message: 'SSH session closed'
+  });
+});
 
 // Serve main page
 app.get('/', (req, res) => {
@@ -74,19 +154,17 @@ wss.on('connection', (ws, req) => {
 
       if (data.type === 'terminal') {
         terminalHandler.handleTerminal(ws, data);
-      } else if (data.type === 'vnc') {
-        // VNC proxy handling will be implemented
-        ws.send(JSON.stringify({
-          type: 'vnc',
-          status: 'connected'
-        }));
       }
     } catch (error) {
       console.error('WebSocket message error:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: error.message
-      }));
+      try {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: error.message
+        }));
+      } catch (e) {
+        console.error('Error sending error message:', e);
+      }
     }
   });
 
@@ -119,20 +197,20 @@ app.use((req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = config.server.port;
 server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║  VPS Console Manager Server                               ║
 ║  --------------------------------------------------------  ║
 ║  Server running on: http://localhost:${PORT}              ║
-║  Environment: ${process.env.NODE_ENV || 'development'}                           ║
+║  Environment: ${config.server.nodeEnv}                    ║
 ║                                                           ║
 ║  Features:                                                ║
-║  - noVNC Remote Desktop                                   ║
+║  - SSH Authentication                                     ║
 ║  - SFTP File Manager                                      ║
 ║  - Web Terminal                                           ║
-║  - System Monitor                                         ║
+║  - Real-time Server Monitoring                            ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });

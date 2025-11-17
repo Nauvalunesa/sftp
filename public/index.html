@@ -6,27 +6,41 @@
     <title>VPS Console Manager</title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Monaco Editor -->
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <!-- Chart.js for monitoring graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-    <!-- Login Screen -->
+    <!-- SSH Login Screen -->
     <div id="loginScreen" class="auth-screen">
         <div class="auth-container">
             <div class="auth-header">
-                <i class="fas fa-server"></i>
+                <i class="fas fa-terminal"></i>
                 <h1>VPS Console Manager</h1>
-                <p>Professional VPS Management Dashboard</p>
+                <p>SSH Authentication - Secure Access to Your VPS</p>
             </div>
-            <form id="loginForm" class="auth-form">
+            <form id="sshLoginForm" class="auth-form">
+                <div class="form-row-inline">
+                    <div class="form-group">
+                        <i class="fas fa-server"></i>
+                        <input type="text" id="loginSshHost" placeholder="SSH Host" required>
+                    </div>
+                    <div class="form-group" style="max-width: 120px;">
+                        <i class="fas fa-hashtag"></i>
+                        <input type="number" id="loginSshPort" placeholder="Port" value="22" required>
+                    </div>
+                </div>
                 <div class="form-group">
                     <i class="fas fa-user"></i>
-                    <input type="text" id="username" placeholder="Username" required>
+                    <input type="text" id="loginSshUsername" placeholder="SSH Username" required>
                 </div>
                 <div class="form-group">
                     <i class="fas fa-lock"></i>
-                    <input type="password" id="password" placeholder="Password" required>
+                    <input type="password" id="loginSshPassword" placeholder="SSH Password" required>
                 </div>
                 <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-sign-in-alt"></i> Login
+                    <i class="fas fa-sign-in-alt"></i> Connect via SSH
                 </button>
                 <div id="loginError" class="error-message"></div>
             </form>
@@ -42,39 +56,30 @@
                 <h2>VPS Manager</h2>
             </div>
             <nav class="sidebar-nav">
-                <a href="#" class="nav-item active" data-page="overview">
+                <a href="#" class="nav-item active" data-page="monitor">
                     <i class="fas fa-chart-line"></i>
-                    <span>Overview</span>
+                    <span>Monitoring</span>
                 </a>
                 <a href="#" class="nav-item" data-page="terminal">
                     <i class="fas fa-terminal"></i>
                     <span>Terminal</span>
                 </a>
-                <a href="#" class="nav-item" data-page="vnc">
-                    <i class="fas fa-desktop"></i>
-                    <span>Remote Desktop</span>
-                </a>
                 <a href="#" class="nav-item" data-page="sftp">
                     <i class="fas fa-folder"></i>
                     <span>File Manager</span>
                 </a>
-                <a href="#" class="nav-item" data-page="services">
-                    <i class="fas fa-cogs"></i>
-                    <span>Services</span>
-                </a>
-                <a href="#" class="nav-item" data-page="network">
-                    <i class="fas fa-network-wired"></i>
-                    <span>Network</span>
-                </a>
             </nav>
             <div class="sidebar-footer">
                 <div class="user-info">
-                    <i class="fas fa-user-circle"></i>
-                    <span id="currentUser">Admin</span>
+                    <i class="fas fa-server"></i>
+                    <div class="user-details">
+                        <span id="currentUser" class="username">user@host</span>
+                        <small id="sshConnectionInfo" class="connection-info">SSH Connected</small>
+                    </div>
                 </div>
                 <button id="logoutBtn" class="btn btn-logout">
                     <i class="fas fa-sign-out-alt"></i>
-                    Logout
+                    Disconnect
                 </button>
             </div>
         </aside>
@@ -84,21 +89,22 @@
             <!-- Header -->
             <header class="content-header">
                 <div class="header-left">
-                    <h1 id="pageTitle">System Overview</h1>
+                    <h1 id="pageTitle">Server Monitoring</h1>
                 </div>
                 <div class="header-right">
                     <div class="status-indicator">
                         <div class="status-dot online"></div>
                         <span>Online</span>
                     </div>
-                    <button class="btn btn-icon" title="Refresh">
+                    <button class="btn btn-icon" id="refreshMonitor" title="Refresh">
                         <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
             </header>
 
-            <!-- Overview Page -->
-            <div id="overviewPage" class="page active">
+            <!-- Monitor Page -->
+            <div id="monitorPage" class="page active">
+                <!-- Stats Cards -->
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-icon cpu">
@@ -107,7 +113,7 @@
                         <div class="stat-info">
                             <h3>CPU Usage</h3>
                             <div class="stat-value" id="cpuUsage">0%</div>
-                            <div class="stat-label">Processing Power</div>
+                            <div class="stat-label" id="cpuCores">0 Cores</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -142,14 +148,59 @@
                     </div>
                 </div>
 
+                <!-- Real-time Charts -->
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3><i class="fas fa-chart-area"></i> CPU Usage History</h3>
+                        <canvas id="cpuChart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3><i class="fas fa-chart-area"></i> Memory Usage History</h3>
+                        <canvas id="memoryChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Network Stats -->
+                <div class="network-stats">
+                    <div class="network-card">
+                        <h3><i class="fas fa-network-wired"></i> Network Traffic</h3>
+                        <div class="network-grid">
+                            <div class="network-stat">
+                                <i class="fas fa-arrow-down"></i>
+                                <div>
+                                    <div class="network-label">Download</div>
+                                    <div class="network-value" id="networkRx">0 MB/s</div>
+                                    <div class="network-total" id="networkRxTotal">Total: 0 GB</div>
+                                </div>
+                            </div>
+                            <div class="network-stat">
+                                <i class="fas fa-arrow-up"></i>
+                                <div>
+                                    <div class="network-label">Upload</div>
+                                    <div class="network-value" id="networkTx">0 MB/s</div>
+                                    <div class="network-total" id="networkTxTotal">Total: 0 GB</div>
+                                </div>
+                            </div>
+                        </div>
+                        <canvas id="networkChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- System Info & Processes -->
                 <div class="info-grid">
                     <div class="info-card">
                         <h3><i class="fas fa-info-circle"></i> System Information</h3>
-                        <div id="systemInfo" class="info-content"></div>
+                        <div id="systemInfo" class="info-content">
+                            <div class="info-item"><strong>Hostname:</strong> <span id="sysHostname">-</span></div>
+                            <div class="info-item"><strong>Platform:</strong> <span id="sysPlatform">-</span></div>
+                            <div class="info-item"><strong>Architecture:</strong> <span id="sysArch">-</span></div>
+                            <div class="info-item"><strong>CPU Model:</strong> <span id="sysCpuModel">-</span></div>
+                            <div class="info-item"><strong>Load Average:</strong> <span id="sysLoadAvg">-</span></div>
+                        </div>
                     </div>
                     <div class="info-card">
-                        <h3><i class="fas fa-chart-area"></i> Load Average</h3>
-                        <div id="loadAverage" class="info-content"></div>
+                        <h3><i class="fas fa-list"></i> Top Processes (by CPU)</h3>
+                        <div id="processList" class="process-list"></div>
                     </div>
                 </div>
             </div>
@@ -172,121 +223,108 @@
                 </div>
             </div>
 
-            <!-- VNC Page -->
-            <div id="vncPage" class="page">
-                <div class="vnc-container">
-                    <div class="vnc-header">
-                        <span><i class="fas fa-desktop"></i> Remote Desktop (noVNC)</span>
-                        <div class="vnc-controls">
-                            <button class="btn btn-sm" id="connectVNC">
-                                <i class="fas fa-plug"></i> Connect
-                            </button>
-                            <button class="btn btn-sm" id="disconnectVNC">
-                                <i class="fas fa-times"></i> Disconnect
-                            </button>
-                            <button class="btn btn-sm" id="fullscreenVNC">
-                                <i class="fas fa-expand"></i> Fullscreen
-                            </button>
-                        </div>
-                    </div>
-                    <div id="vncViewer" class="vnc-viewer">
-                        <div class="vnc-placeholder">
-                            <i class="fas fa-desktop"></i>
-                            <p>Click "Connect" to start remote desktop session</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- SFTP Page -->
             <div id="sftpPage" class="page">
                 <div class="sftp-container">
                     <div class="sftp-header">
-                        <div class="sftp-connection">
-                            <input type="text" id="sftpHost" placeholder="Host" value="localhost">
-                            <input type="number" id="sftpPort" placeholder="Port" value="22">
-                            <input type="text" id="sftpUsername" placeholder="Username">
-                            <input type="password" id="sftpPassword" placeholder="Password">
-                            <button class="btn btn-sm" id="connectSFTP">
-                                <i class="fas fa-plug"></i> Connect
-                            </button>
+                        <div class="sftp-path">
+                            <i class="fas fa-folder-open"></i>
+                            <span id="currentPath">/</span>
                         </div>
                         <div class="sftp-toolbar">
-                            <button class="btn btn-sm" id="uploadFile">
-                                <i class="fas fa-upload"></i> Upload
+                            <button class="btn btn-sm" id="parentDirBtn" title="Parent Directory">
+                                <i class="fas fa-level-up-alt"></i>
                             </button>
-                            <button class="btn btn-sm" id="createFolder">
+                            <button class="btn btn-sm btn-primary" id="newFileBtn">
+                                <i class="fas fa-file-plus"></i> New File
+                            </button>
+                            <button class="btn btn-sm btn-primary" id="newFolderBtn">
                                 <i class="fas fa-folder-plus"></i> New Folder
                             </button>
-                            <button class="btn btn-sm" id="refreshFiles">
+                            <button class="btn btn-sm" id="refreshFilesBtn">
                                 <i class="fas fa-sync"></i> Refresh
                             </button>
+                            <label class="btn btn-sm btn-success upload-btn">
+                                <i class="fas fa-upload"></i> Upload
+                                <input type="file" id="fileUpload" multiple hidden>
+                            </label>
                         </div>
                     </div>
-                    <div class="sftp-path">
-                        <i class="fas fa-folder-open"></i>
-                        <span id="currentPath">/</span>
-                    </div>
-                    <div class="file-manager">
-                        <table class="file-table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Size</th>
-                                    <th>Modified</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="fileList">
-                                <tr>
-                                    <td colspan="4" class="no-files">Connect to SFTP to view files</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <input type="file" id="fileUploadInput" style="display: none;">
-            </div>
-
-            <!-- Services Page -->
-            <div id="servicesPage" class="page">
-                <div class="services-container">
-                    <h2>Service Management</h2>
-                    <div class="service-control">
-                        <input type="text" id="serviceName" placeholder="Service name (e.g., nginx, apache2)">
-                        <div class="service-buttons">
-                            <button class="btn btn-success" data-action="start">
-                                <i class="fas fa-play"></i> Start
-                            </button>
-                            <button class="btn btn-warning" data-action="restart">
-                                <i class="fas fa-redo"></i> Restart
-                            </button>
-                            <button class="btn btn-danger" data-action="stop">
-                                <i class="fas fa-stop"></i> Stop
-                            </button>
-                            <button class="btn btn-info" data-action="status">
-                                <i class="fas fa-info"></i> Status
-                            </button>
+                    <div id="fileList" class="file-list">
+                        <div class="empty-state">
+                            <i class="fas fa-folder-open"></i>
+                            <p>No files to display</p>
                         </div>
                     </div>
-                    <div id="serviceOutput" class="service-output"></div>
-                </div>
-            </div>
-
-            <!-- Network Page -->
-            <div id="networkPage" class="page">
-                <div class="network-container">
-                    <h2>Network Interfaces</h2>
-                    <div id="networkInfo" class="network-info"></div>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Notification Toast -->
-    <div id="toast" class="toast"></div>
+    <!-- File Editor Modal -->
+    <div id="fileEditorModal" class="modal">
+        <div class="modal-content editor-modal">
+            <div class="modal-header">
+                <div class="editor-title">
+                    <i class="fas fa-file-code"></i>
+                    <span id="editorFileName">Editing: file.txt</span>
+                </div>
+                <div class="editor-actions">
+                    <button class="btn btn-sm btn-success" id="saveFileBtn">
+                        <i class="fas fa-save"></i> Save
+                    </button>
+                    <button class="btn btn-sm" id="closeEditorBtn">
+                        <i class="fas fa-times"></i> Close
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="monacoEditor" class="monaco-editor-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move/Copy File Modal -->
+    <div id="moveFileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-arrows-alt"></i> Move/Copy File</h3>
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Current Path:</label>
+                    <input type="text" id="moveSourcePath" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Destination Path:</label>
+                    <input type="text" id="moveDestPath" placeholder="/path/to/destination">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="copyInsteadMove">
+                        Copy instead of move
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="confirmMoveBtn">
+                    <i class="fas fa-check"></i> Confirm
+                </button>
+                <button class="btn" id="cancelMoveBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts -->
+    <script>
+        var require = { paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.nls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="/js/app.js"></script>
 </body>
 </html>
