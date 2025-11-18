@@ -186,6 +186,11 @@ function setupEventListeners() {
         closeEditorBtn.addEventListener('click', closeFileEditor);
     }
 
+    const runCodeBtn = document.getElementById('runCodeBtn');
+    if (runCodeBtn) {
+        runCodeBtn.addEventListener('click', handleRunCode);
+    }
+
     // Move file modal controls
     const confirmMoveBtn = document.getElementById('confirmMoveBtn');
     if (confirmMoveBtn) {
@@ -1134,9 +1139,18 @@ function openFileEditor(filename, content) {
     document.getElementById('editorFileName').textContent = `Editing: ${filename}`;
     modal.style.display = 'block';
 
+    // Show/hide Run button based on file type
+    const runCodeBtn = document.getElementById('runCodeBtn');
+    if (runCodeBtn) {
+        runCodeBtn.style.display = isExecutableFile(filename) ? 'inline-flex' : 'none';
+    }
+
     // Initialize Monaco Editor if not already initialized
     if (!state.monacoEditor) {
         require(['vs/editor/editor.main'], function() {
+            // Configure language-specific validation and IntelliSense
+            configureMonacoLanguages();
+
             state.monacoEditor = monaco.editor.create(editorContainer, {
                 value: content,
                 language: detectLanguage(filename),
@@ -1147,13 +1161,143 @@ function openFileEditor(filename, content) {
                 lineNumbers: 'on',
                 roundedSelection: false,
                 scrollBeyondLastLine: false,
-                readOnly: false
+                readOnly: false,
+                // Enable VSCode-like features
+                wordWrap: 'on',
+                formatOnPaste: true,
+                formatOnType: true,
+                autoIndent: 'full',
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: {
+                    other: true,
+                    comments: false,
+                    strings: true
+                },
+                parameterHints: {
+                    enabled: true
+                },
+                snippetSuggestions: 'inline',
+                folding: true,
+                foldingStrategy: 'indentation',
+                showFoldingControls: 'always',
+                matchBrackets: 'always',
+                renderLineHighlight: 'all',
+                bracketPairColorization: {
+                    enabled: true
+                },
+                codeLens: true,
+                occurrencesHighlight: true,
+                selectionHighlight: true,
+                hover: {
+                    enabled: true
+                }
             });
         });
     } else {
         state.monacoEditor.setValue(content);
         state.monacoEditor.setModel(monaco.editor.createModel(content, detectLanguage(filename)));
     }
+}
+
+// Configure Monaco language services for validation and IntelliSense
+function configureMonacoLanguages() {
+    // JavaScript/TypeScript validation settings
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: false,
+        noSyntaxValidation: false,
+        diagnosticCodesToIgnore: []
+    });
+
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+        target: monaco.languages.typescript.ScriptTarget.ES2020,
+        allowNonTsExtensions: true,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        noEmit: true,
+        esModuleInterop: true,
+        allowJs: true,
+        checkJs: true
+    });
+
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: false,
+        noSyntaxValidation: false,
+        diagnosticCodesToIgnore: []
+    });
+
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+        target: monaco.languages.typescript.ScriptTarget.ES2020,
+        allowNonTsExtensions: true,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        noEmit: true,
+        esModuleInterop: true,
+        jsx: monaco.languages.typescript.JsxEmit.React,
+        strict: true
+    });
+
+    // JSON validation
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+        validate: true,
+        allowComments: true,
+        schemas: [],
+        enableSchemaRequest: true
+    });
+
+    // CSS/SCSS validation
+    monaco.languages.css.cssDefaults.setDiagnosticsOptions({
+        validate: true,
+        lint: {
+            compatibleVendorPrefixes: 'warning',
+            vendorPrefix: 'warning',
+            duplicateProperties: 'warning',
+            emptyRules: 'warning',
+            importStatement: 'warning',
+            zeroUnits: 'warning',
+            fontFaceProperties: 'warning',
+            hexColorLength: 'warning',
+            argumentsInColorFunction: 'error',
+            unknownProperties: 'warning',
+            ieHack: 'warning',
+            unknownVendorSpecificProperties: 'warning',
+            propertyIgnoredDueToDisplay: 'warning',
+            important: 'ignore',
+            float: 'ignore',
+            idSelector: 'ignore'
+        }
+    });
+
+    monaco.languages.scss.scssDefaults.setDiagnosticsOptions({
+        validate: true,
+        lint: {
+            compatibleVendorPrefixes: 'warning',
+            vendorPrefix: 'warning',
+            duplicateProperties: 'warning'
+        }
+    });
+
+    // HTML validation
+    monaco.languages.html.htmlDefaults.setOptions({
+        format: {
+            tabSize: 2,
+            insertSpaces: true,
+            wrapLineLength: 120,
+            unformatted: 'wbr',
+            contentUnformatted: 'pre,code,textarea',
+            indentInnerHtml: false,
+            preserveNewLines: true,
+            maxPreserveNewLines: null,
+            indentHandlebars: false,
+            endWithNewline: false,
+            extraLiners: 'head, body, /html',
+            wrapAttributes: 'auto'
+        },
+        suggest: {
+            html5: true,
+            angular1: false,
+            ionic: false
+        }
+    });
 }
 
 function detectLanguage(filename) {
@@ -1185,6 +1329,102 @@ function detectLanguage(filename) {
         'sql': 'sql'
     };
     return langMap[ext] || 'plaintext';
+}
+
+// Check if a file can be executed
+function isExecutableFile(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const executableExtensions = ['py', 'js', 'sh', 'bash', 'rb', 'php', 'pl', 'lua'];
+    return executableExtensions.includes(ext);
+}
+
+// Get execution command for a file
+function getExecutionCommand(filename, filepath) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const commands = {
+        'py': `python3 "${filepath}"`,
+        'js': `node "${filepath}"`,
+        'sh': `bash "${filepath}"`,
+        'bash': `bash "${filepath}"`,
+        'rb': `ruby "${filepath}"`,
+        'php': `php "${filepath}"`,
+        'pl': `perl "${filepath}"`,
+        'lua': `lua "${filepath}"`
+    };
+    return commands[ext] || null;
+}
+
+// Handle code execution
+async function handleRunCode() {
+    if (!state.currentFile || !state.terminal) {
+        showError('Terminal not available. Please switch to Terminal tab first.');
+        return;
+    }
+
+    const filename = state.currentFile.split('/').pop();
+    const runBtn = document.getElementById('runCodeBtn');
+
+    try {
+        // First, save the file
+        runBtn.disabled = true;
+        runBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+
+        const content = state.monacoEditor.getValue();
+        const response = await fetch('/api/sftp/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: state.currentFile,
+                content: content
+            })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || 'Failed to save file');
+        }
+
+        // Get execution command
+        const command = getExecutionCommand(filename, state.currentFile);
+        if (!command) {
+            throw new Error('No execution command found for this file type');
+        }
+
+        // Close editor modal
+        closeFileEditor();
+
+        // Switch to terminal tab
+        showPage('terminal');
+
+        // Wait a moment for terminal to be ready
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Clear terminal and run command
+        if (state.terminal) {
+            state.terminal.write('\r\n\x1b[1;36m=== Running: ' + filename + ' ===\x1b[0m\r\n');
+        }
+
+        // Send command to terminal
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({
+                type: 'terminal',
+                action: 'input',
+                input: command + '\n',
+                terminalId: state.terminalId,
+                sessionId: state.sshSessionId
+            }));
+        } else {
+            throw new Error('WebSocket not connected');
+        }
+
+        showSuccess('Code execution started in terminal');
+    } catch (error) {
+        console.error('Run code error:', error);
+        showError('Failed to run code: ' + error.message);
+    } finally {
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="fas fa-play"></i> Run';
+    }
 }
 
 async function handleFileSave() {

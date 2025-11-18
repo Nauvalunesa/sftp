@@ -1183,6 +1183,38 @@ body {
     gap: 10px;
     font-size: 18px;
     font-weight: 600;
+    flex-wrap: wrap;
+}
+
+.editor-features {
+    display: flex;
+    gap: 8px;
+    margin-left: 15px;
+    flex-wrap: wrap;
+}
+
+.feature-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary-color);
+    transition: all 0.2s;
+}
+
+.feature-badge i {
+    font-size: 10px;
+}
+
+.feature-badge:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    transform: translateY(-1px);
 }
 
 .editor-actions {
