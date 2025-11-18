@@ -291,8 +291,22 @@
                 <div class="editor-title">
                     <i class="fas fa-file-code"></i>
                     <span id="editorFileName">Editing: file.txt</span>
+                    <div class="editor-features">
+                        <span class="feature-badge" title="Syntax error checking enabled">
+                            <i class="fas fa-check-circle"></i> Syntax Check
+                        </span>
+                        <span class="feature-badge" title="IntelliSense autocomplete">
+                            <i class="fas fa-lightbulb"></i> IntelliSense
+                        </span>
+                        <span class="feature-badge" title="Line numbers visible">
+                            <i class="fas fa-list-ol"></i> Lines
+                        </span>
+                    </div>
                 </div>
                 <div class="editor-actions">
+                    <button class="btn btn-sm btn-primary" id="runCodeBtn" style="display: none;">
+                        <i class="fas fa-play"></i> Run
+                    </button>
                     <button class="btn btn-sm btn-success" id="saveFileBtn">
                         <i class="fas fa-save"></i> Save
                     </button>
