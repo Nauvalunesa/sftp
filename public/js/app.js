@@ -9,6 +9,8 @@ const state = {
     sshUsername: null,
     ws: null,
     terminal: null,
+    terminalFontSize: 14,
+    terminalFullscreen: false,
     currentPath: '/',
     currentFile: null,
     monacoEditor: null,
@@ -93,12 +95,56 @@ function setupEventListeners() {
         });
     }
 
-    const newTerminal = document.getElementById('newTerminal');
-    if (newTerminal) {
-        newTerminal.addEventListener('click', () => {
+    const reconnectTerminal = document.getElementById('reconnectTerminal');
+    if (reconnectTerminal) {
+        reconnectTerminal.addEventListener('click', () => {
             if (state.terminal) {
                 state.terminal.clear();
                 createTerminal();
+                updateTerminalStatus('Reconnecting...', false);
+            }
+        });
+    }
+
+    // Font size controls
+    const fontIncreaseBtn = document.getElementById('fontIncreaseBtn');
+    if (fontIncreaseBtn) {
+        fontIncreaseBtn.addEventListener('click', () => {
+            if (state.terminal && state.terminalFontSize < 24) {
+                state.terminalFontSize += 2;
+                state.terminal.options.fontSize = state.terminalFontSize;
+                updateFontSizeDisplay();
+                fitTerminal();
+            }
+        });
+    }
+
+    const fontDecreaseBtn = document.getElementById('fontDecreaseBtn');
+    if (fontDecreaseBtn) {
+        fontDecreaseBtn.addEventListener('click', () => {
+            if (state.terminal && state.terminalFontSize > 10) {
+                state.terminalFontSize -= 2;
+                state.terminal.options.fontSize = state.terminalFontSize;
+                updateFontSizeDisplay();
+                fitTerminal();
+            }
+        });
+    }
+
+    // Fullscreen toggle
+    const fullscreenTerminal = document.getElementById('fullscreenTerminal');
+    if (fullscreenTerminal) {
+        fullscreenTerminal.addEventListener('click', () => {
+            toggleFullscreen();
+        });
+    }
+
+    // Copy mode info
+    const copyModeBtn = document.getElementById('copyModeBtn');
+    if (copyModeBtn) {
+        copyModeBtn.addEventListener('click', () => {
+            if (state.terminal) {
+                state.terminal.write('\r\n\x1b[1;33m[Copy Mode]\x1b[0m Select text with mouse, then press Ctrl+C or Cmd+C to copy\r\n');
             }
         });
     }
@@ -317,13 +363,24 @@ function navigateToPage(pageName) {
         pageTitle.textContent = titles[pageName];
     }
 
+    // Stop monitoring when switching away from monitor page
+    if (pageName !== 'monitor' && state.monitoringInterval) {
+        console.log('Stopping monitoring interval');
+        clearInterval(state.monitoringInterval);
+        state.monitoringInterval = null;
+    }
+
     // Initialize page-specific features
     if (pageName === 'monitor') {
         initMonitoring();
-    } else if (pageName === 'terminal' && !state.terminal) {
-        initTerminal();
+    } else if (pageName === 'terminal') {
+        if (!state.terminal) {
+            console.log('Initializing terminal...');
+            initTerminal();
+        }
     } else if (pageName === 'sftp') {
-        connectSFTP();
+        console.log('Loading file list...');
+        loadFileList();
     }
 }
 
@@ -344,13 +401,14 @@ function initMonitoring() {
         initializeCharts();
     }
 
-    // Start monitoring updates
+    // Start monitoring updates with 5 second interval (reduced load)
     if (state.monitoringInterval) {
         clearInterval(state.monitoringInterval);
     }
 
     fetchMonitoringData();
-    state.monitoringInterval = setInterval(fetchMonitoringData, 2000);
+    state.monitoringInterval = setInterval(fetchMonitoringData, 5000); // Changed from 2000 to 5000
+    console.log('Monitoring started with 5s interval');
 }
 
 function initializeCharts() {
@@ -885,17 +943,54 @@ async function loadFileList(path = null) {
         state.currentPath = path;
     }
 
+    // Get home directory first if current path is /
+    if (!path && state.currentPath === '/') {
+        try {
+            console.log('Getting home directory...');
+            const homeResponse = await fetch('/api/sftp/home');
+            const homeData = await homeResponse.json();
+            if (homeData.success) {
+                state.currentPath = homeData.path;
+                console.log('Home directory:', state.currentPath);
+            }
+        } catch (error) {
+            console.error('Failed to get home directory:', error);
+        }
+    }
+
     try {
+        console.log('Loading file list for path:', state.currentPath);
         const response = await fetch(`/api/sftp/list?path=${encodeURIComponent(state.currentPath)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
 
         if (data.success) {
+            console.log(`Loaded ${data.files?.length || 0} files`);
+            state.currentPath = data.path || state.currentPath; // Update with actual path from server
             displayFileList(data.files);
             document.getElementById('currentPath').textContent = state.currentPath;
+        } else {
+            console.error('SFTP list failed:', data.message);
+            showError('Failed to load file list: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('File list error:', error);
+        showError('Failed to load file list: ' + error.message);
     }
+}
+
+function showError(message) {
+    // Simple error notification
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-notification';
+    errorDiv.textContent = message;
+    errorDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:#ef4444;color:white;padding:15px 20px;border-radius:8px;z-index:10000;';
+    document.body.appendChild(errorDiv);
+    setTimeout(() => errorDiv.remove(), 5000);
 }
 
 function displayFileList(files) {
@@ -905,52 +1000,97 @@ function displayFileList(files) {
     if (!files || files.length === 0) {
         fileList.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-folder-open"></i>
-                <p>No files to display</p>
+                <i class="fas fa-folder-open" style="font-size:48px;color:#64748b;margin-bottom:15px;"></i>
+                <p style="color:#94a3b8;">No files in this directory</p>
             </div>
         `;
         return;
     }
 
-    let html = '<div class="file-grid">';
+    // Sort: directories first, then files alphabetically
+    const sorted = [...files].sort((a, b) => {
+        const aIsDir = a.type === 'directory';
+        const bIsDir = b.type === 'directory';
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.name.localeCompare(b.name);
+    });
 
-    files.forEach(file => {
-        const icon = file.type === 'd' ? 'fa-folder' : 'fa-file';
-        const fileClass = file.type === 'd' ? 'directory' : 'file';
+    let html = '<table class="file-table"><thead><tr><th style="text-align:left;padding-left:20px">Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>';
+
+    sorted.forEach(file => {
+        const isDirectory = file.type === 'directory';
+        const icon = isDirectory ? 'fa-folder' : getFileIcon(file.name);
+        const iconColor = isDirectory ? '#3b82f6' : '#64748b';
+        const fileSize = isDirectory ? '-' : formatFileSize(file.size);
+        const modified = file.modified ? new Date(file.modified).toLocaleString() : '-';
+        const fileName = escapeHtml(file.name);
+        const nameAttr = file.name.replace(/'/g, "\\'");
 
         html += `
-            <div class="file-item ${fileClass}" data-name="${file.name}" data-type="${file.type}">
-                <i class="fas ${icon}"></i>
-                <span class="file-name">${file.name}</span>
-                <div class="file-actions">
-                    ${file.type === '-' ? `
-                        <button class="btn-icon" onclick="handleFileEdit('${file.name}')" title="Edit">
-                            <i class="fas fa-edit"></i>
+            <tr class="file-row">
+                <td class="name-cell" onclick="${isDirectory ? `navigateToFolder('${nameAttr}')` : ''}" style="cursor:${isDirectory ? 'pointer' : 'default'};padding-left:20px;">
+                    <i class="fas ${icon}" style="color:${iconColor};margin-right:10px;"></i>
+                    <span>${fileName}</span>
+                </td>
+                <td style="text-align:center;color:#94a3b8;">${fileSize}</td>
+                <td style="text-align:center;color:#94a3b8;font-size:13px;">${modified}</td>
+                <td style="text-align:center;">
+                    <div class="action-buttons">
+                        ${!isDirectory ? `
+                            <button class="btn-action" onclick="handleFileEdit('${nameAttr}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn-action" onclick="handleFileDownload('${nameAttr}')" title="Download">
+                                <i class="fas fa-download"></i>
+                            </button>
+                        ` : ''}
+                        <button class="btn-action btn-delete" onclick="handleFileDelete('${nameAttr}', '${file.type}')" title="Delete">
+                            <i class="fas fa-trash"></i>
                         </button>
-                    ` : ''}
-                    <button class="btn-icon" onclick="handleFileDownload('${file.name}')" title="Download">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="btn-icon" onclick="handleFileDelete('${file.name}', '${file.type}')" title="Delete">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
+                    </div>
+                </td>
+            </tr>
         `;
     });
 
-    html += '</div>';
+    html += '</tbody></table>';
     fileList.innerHTML = html;
+}
 
-    // Add click handlers for directories
-    const dirItems = fileList.querySelectorAll('.file-item.directory');
-    dirItems.forEach(item => {
-        item.addEventListener('dblclick', () => {
-            const dirName = item.dataset.name;
-            const newPath = state.currentPath === '/' ? `/${dirName}` : `${state.currentPath}/${dirName}`;
-            loadFileList(newPath);
-        });
-    });
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getFileIcon(filename) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const iconMap = {
+        'js': 'fa-file-code', 'ts': 'fa-file-code', 'html': 'fa-file-code', 'css': 'fa-file-code',
+        'php': 'fa-file-code', 'py': 'fa-file-code', 'java': 'fa-file-code', 'go': 'fa-file-code',
+        'txt': 'fa-file-alt', 'md': 'fa-file-alt', 'pdf': 'fa-file-pdf',
+        'doc': 'fa-file-word', 'xls': 'fa-file-excel',
+        'zip': 'fa-file-archive', 'tar': 'fa-file-archive', 'gz': 'fa-file-archive',
+        'jpg': 'fa-file-image', 'png': 'fa-file-image', 'gif': 'fa-file-image',
+        'mp4': 'fa-file-video', 'mp3': 'fa-file-audio',
+        'json': 'fa-file-code', 'xml': 'fa-file-code', 'yml': 'fa-file-code'
+    };
+    return iconMap[ext] || 'fa-file';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function navigateToFolder(folderName) {
+    const newPath = state.currentPath === '/' ? `/${folderName}` : `${state.currentPath}/${folderName}`;
+    console.log('Navigating to folder:', newPath);
+    loadFileList(newPath);
 }
 
 function navigateToParent() {
@@ -966,14 +1106,24 @@ async function handleFileEdit(filename) {
     const filePath = state.currentPath === '/' ? `/${filename}` : `${state.currentPath}/${filename}`;
 
     try {
-        const response = await fetch(`/api/sftp/download?path=${encodeURIComponent(filePath)}`);
-        const content = await response.text();
+        console.log('Reading file:', filePath);
+        const response = await fetch(`/api/sftp/read?path=${encodeURIComponent(filePath)}`);
 
-        state.currentFile = filePath;
-        openFileEditor(filename, content);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            state.currentFile = filePath;
+            openFileEditor(filename, data.content);
+        } else {
+            throw new Error(data.message || 'Failed to read file');
+        }
     } catch (error) {
         console.error('File edit error:', error);
-        alert('Failed to open file');
+        showError('Failed to open file: ' + error.message);
     }
 }
 
@@ -1041,9 +1191,14 @@ async function handleFileSave() {
     if (!state.monacoEditor || !state.currentFile) return;
 
     const content = state.monacoEditor.getValue();
+    const saveBtn = document.getElementById('saveFileBtn');
 
     try {
-        const response = await fetch('/api/sftp/write-file', {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        console.log('Saving file:', state.currentFile);
+        const response = await fetch('/api/sftp/write', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1057,14 +1212,30 @@ async function handleFileSave() {
         const data = await response.json();
 
         if (data.success) {
-            alert('File saved successfully');
+            showSuccess('File saved successfully!');
+            // Close editor after short delay
+            setTimeout(() => {
+                closeFileEditor();
+            }, 1000);
         } else {
-            alert('Failed to save file: ' + data.message);
+            throw new Error(data.message || 'Failed to save file');
         }
     } catch (error) {
         console.error('File save error:', error);
-        alert('Failed to save file');
+        showError('Failed to save file: ' + error.message);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
     }
+}
+
+function showSuccess(message) {
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-notification';
+    successDiv.textContent = message;
+    successDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:#22c55e;color:white;padding:15px 20px;border-radius:8px;z-index:10000;box-shadow:0 4px 6px rgba(0,0,0,0.1);';
+    document.body.appendChild(successDiv);
+    setTimeout(() => successDiv.remove(), 3000);
 }
 
 function closeFileEditor() {
